@@ -490,7 +490,7 @@ function solve(){
     hl=results.map(m=>{
       let kind,label;
       if(m.tag==='dead'){kind='dead';label='💀';}
-      else if(m.tag==='respawn'){kind='capture';label=`💀+${m.capVal}`;}
+      else if(m.tag==='respawn'){kind='respawn';label=`💀+${m.capVal}`;}
       else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
       else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
@@ -605,6 +605,10 @@ function draw(){
     } else if(h.kind==='threat2'){
       cx.fillStyle='rgba(255,180,0,.2)';cx.fillRect(x,y,CELL,CELL);
       cx.font=`${~~(CELL*.22)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#886600';cx.fillText(h.label,px,py);
+    } else if(h.kind==='respawn'){
+      cx.fillStyle='rgba(200,60,20,.35)';cx.fillRect(x,y,CELL,CELL);
+      cx.strokeStyle='#ff4400';cx.lineWidth=2;cx.setLineDash([3,3]);cx.strokeRect(x+1,y+1,CELL-2,CELL-2);cx.setLineDash([]);
+      if(h.label){cx.font=`bold ${~~(CELL*.24)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#fff';cx.fillText(h.label,px,py);}
     } else if(h.kind==='pos'){
       cx.fillStyle='rgba(100,150,255,.12)';cx.fillRect(x,y,CELL,CELL);
       if(h.label){cx.font=`${~~(CELL*.2)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='rgba(60,100,180,.6)';cx.fillText(h.label,px,py);}
