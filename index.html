@@ -496,7 +496,7 @@ function evalRedMove(b, rr, rc, mr, mc){
       }
     }
     if(sfFrac>=0.9&&sfVal>=8){
-      tag='semi'; score=~~(sfVal*sfFrac*10000)+~~(pos.ps/10);
+      tag='semi'; score=pos.ps+1; // semi = positional + info, not higher priority
     } else {
       tag='pos'; score=pos.ps;
     }
