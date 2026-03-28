@@ -538,9 +538,12 @@ function solve(){
       return{r:mr,c:mc,...res};
     });
 
-    // Respawn captures only if no safe captures/threats exist, and only for valuable pieces (30+)
-    const hasBetter=results.some(m=>m.tag==='cap'||m.tag==='threat1'||m.tag==='threat2'||m.tag==='semi');
+    // Priority: cap/threat > semi > respawn > pos
+    const hasCapOrThreat=results.some(m=>m.tag==='cap'||m.tag==='threat1'||m.tag==='threat2');
+    const hasBetter=hasCapOrThreat||results.some(m=>m.tag==='semi');
     results.forEach(m=>{
+      // Semi never beats real captures/threats
+      if(m.tag==='semi'&&hasCapOrThreat) m.score=~~(m.score/100);
       if(m.tag==='respawn'&&(hasBetter||m.capVal<30)) m.score=-99999;
     });
 
