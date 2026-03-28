@@ -440,29 +440,27 @@ function evalRedMove(b, rr, rc, mr, mc){
   const g2=maxGuaranteed(nb, mr, mc, pcnt<=2?3:pcnt<=5?2:1);
 
   const pos=posScore(nb, mr, mc);
-  let score, tag, sfVal=0, sfFrac=0;
+  let score, tag, sfVal=0, sfFrac=0, sfDanger=0;
   if(g1>0){ tag='threat1'; score=g1*10000 + g2*5000 + 1; }
   else if(g2>0){ tag='threat2'; score=g2*5000 + 1; }
   else{
-    // Semi-forced: what fraction of black responses still allow red to capture?
-    // Also check: when capture FAILS, is the rook safe or dead?
-    const bm=allBlackMoves(nb);
-    let sfDanger=0;
-    if(bm.length>0){
-      let sfAllow=0,sfTotal=0;
-      for(const m of bm){
-        if(m.killsRed){sfDanger++;continue;}
-        const nb2=applyBlack(nb,m.r,m.c,m.mr,m.mc);
-        const cv=bestCapVal(nb2,mr,mc);
-        if(cv>0){sfAllow++;sfTotal+=cv;}
-        else if(isAttacked(nb2,mr,mc)) sfDanger++;
+    // Semi-forced: only compute when few pieces (expensive with many)
+    if(pcnt<=6){
+      const bm=allBlackMoves(nb);
+      if(bm.length>0){
+        let sfAllow=0,sfTotal=0;
+        for(const m of bm){
+          if(m.killsRed){sfDanger++;continue;}
+          const nb2=applyBlack(nb,m.r,m.c,m.mr,m.mc);
+          const cv=bestCapVal(nb2,mr,mc);
+          if(cv>0){sfAllow++;sfTotal+=cv;}
+          else if(isAttacked(nb2,mr,mc)) sfDanger++;
+        }
+        sfFrac=sfAllow/bm.length;
+        sfVal=sfAllow>0?sfTotal/sfAllow:0;
+        const dangerRatio=sfDanger/bm.length;
+        if(dangerRatio>0) sfFrac*=(1-dangerRatio*2);
       }
-      sfFrac=bm.length>0?sfAllow/bm.length:0;
-      sfVal=sfAllow>0?sfTotal/sfAllow:0;
-      // Danger ratio: fraction of responses where we die if capture fails
-      const dangerRatio=sfDanger/bm.length;
-      // Penalize: if failure = death, heavily reduce effective probability
-      if(dangerRatio>0) sfFrac*=(1-dangerRatio*2);
     }
     if(sfFrac>=0.9&&sfVal>=8){
       tag='semi'; score=~~(sfVal*sfFrac*10000)+~~(pos.ps/10);
@@ -475,7 +473,7 @@ function evalRedMove(b, rr, rc, mr, mc){
     if(tag==='pos'||tag==='semi') score=-99999;
     else score=~~(score*0.5);
   }
-  return {score, tag, g1, g2, sfVal:~~sfVal, sfFrac:~~(sfFrac*100), sfDanger:~~(sfDanger), ...pos};
+  return {score, tag, g1, g2, sfVal:~~sfVal, sfFrac:~~(sfFrac*100), sfDanger, ...pos};
 }
 
 // Globals for plan display
