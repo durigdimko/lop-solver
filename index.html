@@ -381,9 +381,9 @@ function posScore(b, mr, mc){
   const cc=Math.max(0,2-Math.abs(mc-3.5));
   const center=~~((cr+cc)*2);
 
-  // Composite: safeExits capped (avoid traps but don't flee to corners) + proximity drives direction
+  // Composite: safety first, mobility second. No proximity chasing (pieces run away).
   const safeCap=Math.min(safeExits,5);
-  const ps=safeCap*200 + proximity*10 + mobility*3 + fork*50 + pinned*2 + center + xrayVal + corridorVal;
+  const ps=safeCap*200 + mobility*10 + fork*50 + center*3;
   return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,proximity,bestTarget,safeExits,ps};
 }
 
