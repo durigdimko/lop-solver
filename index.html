@@ -49,6 +49,7 @@ button{padding:9px 18px;border:none;border-radius:7px;cursor:pointer;font-weight
   <button id="sb">🔍 Анализ</button>
   <button id="rb" style="background:#882200;color:#ffaa66;">💀 Респаун: ✓</button>
   <button id="ub" style="background:#333;color:#88bbff;">⚡ Рывок: ✗</button>
+  <button id="bb" style="background:#333;color:#ff8844;">💥 Бум: ✗</button>
   <button id="cb">🗑 Сброс</button>
 </div>
 <div id="res"><span class="gh">Расставьте позицию и нажмите Анализ.</span></div>
@@ -60,7 +61,7 @@ const cv=document.getElementById('bd'),cx=cv.getContext('2d');
 function resize(){const mw=Math.min(window.innerWidth-20,420);CELL=Math.floor((mw-MG)/COLS);cv.width=CELL*COLS+MG;cv.height=CELL*ROWS;}
 resize();
 
-let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true,hasUnstoppable=false,posHistory=[];
+let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true,hasUnstoppable=false,hasBoomCharged=false,posHistory=[];
 
 const PI={
   red:  {ch:'車',cl:'red', v:0},
@@ -414,24 +415,28 @@ function evalRedMove(b, rr, rc, mr, mc){
   const capVal=cap&&PI[cap]?.cl==='blk'?captureValue(b,mr,mc):0;
   const nb=applyRed(b,rr,rc,mr,mc);
 
-  const attacked=isAttacked(nb,mr,mc);
-  if(attacked && !capVal) return {score:-99999, tag:'dead'}; // moving to attacked empty = dead
-  if(attacked && capVal>0 && !hasRespawn) return {score:-99999, tag:'dead'}; // capture but no respawn = dead
-  if(attacked && capVal>0 && hasRespawn){
-    // Respawn capture: we die but respawn at same spot, killing attacker (no points for attacker kill)
-    return {score:capVal*10000+500, tag:'respawn', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang'};
+  // Boom charged: explosion at destination, calculate cross damage
+  let boomVal=0;
+  if(hasBoomCharged){
+    for(let c=0;c<COLS;c++){const p=nb[I(mr,c)];if(p&&PI[p]?.cl==='blk') boomVal+=PI[p].v;}
+    for(let r=0;r<ROWS;r++){const p=nb[I(r,mc)];if(p&&PI[p]?.cl==='blk') boomVal+=PI[p].v;}
   }
-  if(capVal>0){
-    // For jiang captures: explosion happens after black's next move
-    // Chain captures computed on post-explosion board
-    const postBoard=cap==='jiang'?applyExplosion(nb,mr,mc):nb;
+  const boomBoard=hasBoomCharged?applyExplosion(nb,mr,mc):nb;
+
+  const attacked=isAttacked(boomBoard,mr,mc);
+  if(attacked && !capVal && !boomVal) return {score:-99999, tag:'dead'};
+  if(attacked && (capVal||boomVal) && !hasRespawn) return {score:-99999, tag:'dead'};
+  if(attacked && (capVal||boomVal) && hasRespawn){
+    return {score:(capVal+boomVal)*10000+500, tag:'respawn', capPiece:cap?PI[cap].ch:'💥', capVal:capVal+boomVal, isBoom:true, boomVal};
+  }
+  if(capVal>0||boomVal>0){
+    const postBoard=cap==='jiang'?applyExplosion(boomBoard,mr,mc):boomBoard;
     const g1=maxGuaranteed(postBoard, mr, mc, 0);
     const g2=maxGuaranteed(postBoard, mr, mc, 1);
     const chain=g1||g2;
-    const totalVal=capVal+(g1||0);
+    const totalVal=capVal+boomVal+(g1||0);
     const tempo=postCapScore(postBoard,mr,mc);
-    // Immediate capture: value*10000 + 5000 bonus for being immediate + g2 chain bonus
-    return {score:totalVal*10000+5000+g2*5000+tempo, tag:'cap', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang', tempo, chain, g1c:g1, g2c:g2};
+    return {score:totalVal*10000+5000+g2*5000+tempo, tag:'cap', capPiece:cap?PI[cap].ch:'💥', capVal:capVal+boomVal, isBoom:cap==='jiang'||hasBoomCharged, tempo, chain, g1c:g1, g2c:g2, boomVal};
   }
 
   // g1: guaranteed within 2 total red moves (move here + capture next)
@@ -768,6 +773,32 @@ function draw(){
     const t=board[I(r,c)]; if(!t) continue;
     drawPieceOnBoard(t,M+c*CELL+CELL/2,r*CELL+CELL/2,1);
   }
+  // Boom cross: when boom charged, show explosion zone for best move
+  if(hasBoomCharged&&hl.length>0){
+    const best=hl.find(h=>h.kind==='best'||h.kind==='boom');
+    if(best){
+      cx.save();cx.globalAlpha=0.15;cx.fillStyle='#ff4400';
+      for(let c=0;c<COLS;c++) cx.fillRect(M+c*CELL,best.r*CELL,CELL,CELL);
+      for(let r=0;r<ROWS;r++) cx.fillRect(M+best.c*CELL,r*CELL,CELL,CELL);
+      cx.restore();
+    }
+  }
+
+  // Boom overlay: draw ON TOP of pieces so it's visible over jiang's glow
+  for(const h of hl){
+    if(h.kind!=='boom') continue;
+    const x=M+h.c*CELL,y=h.r*CELL,px=x+CELL/2,py=y+CELL/2;
+    cx.save();
+    cx.shadowColor='#ffcc00';cx.shadowBlur=CELL*.8;
+    cx.strokeStyle='#ffdd00';cx.lineWidth=4;
+    cx.strokeRect(x-2,y-2,CELL+4,CELL+4);
+    cx.restore();
+    cx.font=`bold ${~~(CELL*.3)}px sans-serif`;cx.textAlign='center';cx.textBaseline='bottom';
+    cx.fillStyle='#fff';cx.strokeStyle='#000';cx.lineWidth=3;
+    cx.strokeText('💥'+h.label,px,y+CELL+2);
+    cx.fillText('💥'+h.label,px,y+CELL+2);
+  }
+
   cx.fillStyle='#8b5020';cx.font=`${~~(CELL*.2)}px sans-serif`;cx.textAlign='center';cx.textBaseline='bottom';
   'ABCDEFGH'.split('').forEach((l,c)=>cx.fillText(l,M+c*CELL+CELL/2,H-1));
 }
@@ -954,6 +985,11 @@ document.getElementById('ub').addEventListener('click',()=>{
   hasUnstoppable=!hasUnstoppable;
   document.getElementById('ub').textContent=hasUnstoppable?'⚡ Рывок: ✓':'⚡ Рывок: ✗';
   document.getElementById('ub').style.background=hasUnstoppable?'#1a4488':'#333';
+});
+document.getElementById('bb').addEventListener('click',()=>{
+  hasBoomCharged=!hasBoomCharged;
+  document.getElementById('bb').textContent=hasBoomCharged?'💥 Бум: ✓':'💥 Бум: ✗';
+  document.getElementById('bb').style.background=hasBoomCharged?'#884400':'#333';
 });
 
 function loadDefault(){
