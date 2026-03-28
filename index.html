@@ -758,8 +758,29 @@ function loadDefault(){
   board=new Array(ROWS*COLS).fill(null);
   board[I(6,3)]='red';board[I(2,3)]='zu';board[I(2,5)]='zu';board[I(2,7)]='zu';
 }
-function saveBoard(){try{localStorage.setItem('lop_board',JSON.stringify(board));}catch(e){}}
-function loadSaved(){try{const s=localStorage.getItem('lop_board');if(s){const b=JSON.parse(s);if(b&&b.length===ROWS*COLS){board=b;return true;}}}catch(e){}return false;}
+// Encode board to compact URL hash
+const PC='0recsmapbjg'; // 0=empty, r=red, e=zu, c=shi, s=xiang, m=ma, a=pao, b=bju, j=jiang (g not used, just padding)
+const PM={red:'r',zu:'e',shi:'c',xiang:'s',ma:'m',pao:'a',bju:'b',jiang:'j'};
+const PR={r:'red',e:'zu',c:'shi',s:'xiang',m:'ma',a:'pao',b:'bju',j:'jiang'};
+function saveBoard(){
+  let s='';
+  for(let i=0;i<board.length;i++) s+=board[i]?PM[board[i]]:'0';
+  // RLE compress: runs of '0'
+  s=s.replace(/0+/g,m=>m.length>1?m.length+'_':'0');
+  history.replaceState(null,'','#'+s);
+  try{localStorage.setItem('lop_board',s);}catch(e){}
+}
+function loadSaved(){
+  let s=location.hash.slice(1);
+  if(!s) try{s=localStorage.getItem('lop_board')||'';}catch(e){}
+  if(!s) return false;
+  // Decompress RLE
+  s=s.replace(/(\d+)_/g,(m,n)=>'0'.repeat(+n));
+  if(s.length!==ROWS*COLS) return false;
+  board=new Array(ROWS*COLS).fill(null);
+  for(let i=0;i<s.length;i++) if(s[i]!=='0') board[i]=PR[s[i]]||null;
+  return true;
+}
 
 // Auto-save after any board change
 const _origDraw=draw;
