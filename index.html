@@ -352,14 +352,27 @@ function posScore(b, mr, mc){
   // 3. Fork bonus: threatening from 2+ directions simultaneously
   const fork=forkDirs>=2?forkDirs*6:0;
 
-  // 4. Center bonus: rows 3-6, cols 2-5 best for coverage of spawns
+  // 4. Proximity to high-value targets (approach valuable pieces)
+  let proximity=0, bestTarget='';
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const p=b[I(r,c)]; if(!p||PI[p]?.cl!=='blk') continue;
+    const v=PI[p].v; if(v<10) continue; // ignore low-value
+    // Rook distance: 1 if same row or col, 2 otherwise
+    const dist=(r===mr||c===mc)?1:2;
+    const score=v/dist;
+    proximity+=score;
+    if(score>proximity-score||!bestTarget) bestTarget=PI[p].ch;
+  }
+  proximity=~~(proximity);
+
+  // 5. Center bonus (soft)
   const cr=Math.max(0,2-Math.abs(mr-4));
   const cc=Math.max(0,2-Math.abs(mc-3.5));
   const center=~~((cr+cc)*2);
 
-  // Composite: pinned >> fork > mobility > center > xray > corridor(noise)
-  const ps=pinned*1000 + fork*100 + mobility*10 + center*8 + xrayVal*2 + corridorVal;
-  return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,ps};
+  // Composite: pinned >> fork > proximity > mobility > center
+  const ps=pinned*1000 + fork*100 + proximity*5 + mobility*3 + center*2 + xrayVal*2 + corridorVal;
+  return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,proximity,bestTarget,ps};
 }
 
 // Post-capture quality: how good is the square AFTER we take a piece?
@@ -401,9 +414,8 @@ function evalRedMove(b, rr, rc, mr, mc){
   // g1: guaranteed within 2 total red moves (move here + capture next)
   // g2: guaranteed within 3 total red moves (move here + reposition + capture)
   const g1=maxGuaranteed(nb, mr, mc, 0);
-  // Adaptive depth: fewer pieces = deeper search
   const pcnt=nb.filter(x=>x&&PI[x]?.cl==='blk').length;
-  const g2=maxGuaranteed(nb, mr, mc, pcnt<=5?2:1);
+  const g2=maxGuaranteed(nb, mr, mc, pcnt<=3?2:1);
 
   const pos=posScore(nb, mr, mc);
   let score, tag;
@@ -452,7 +464,7 @@ function solve(){
       else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
       else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
-      else{kind='pos';label=m.pinned?`📌${m.pinned}`:m.forkDirs>=2?`🔱${m.forkDirs}`:m.corridorVal?`🔭${m.corridorVal}`:'';}
+      else{kind='pos';label=m.pinned?`📌${m.pinned}`:m.forkDirs>=2?`🔱${m.forkDirs}`:m.proximity?`🎯${m.proximity}`:'';}
       if(m===best&&m.score>0) kind='best';
       return{r:m.r,c:m.c,kind,label,score:m.score,tag:m.tag};
     });
@@ -480,7 +492,7 @@ function solve(){
       let desc=[];
       if(best.pinned) desc.push(`📌${best.pinned}`);
       if(best.forkDirs>=2) desc.push(`🔱форк×${best.forkDirs}`);
-      if(best.corridorVal) desc.push(`🔭${best.corridorVal}`);
+      if(best.proximity) desc.push(`🎯${best.bestTarget||''}≈${best.proximity}`);
       desc.push(`↔${best.mobility}`);
       html+=` — <span class="gw">${desc.join(' ')}</span>`;
     }
@@ -500,7 +512,7 @@ function solve(){
         let parts=[];
         if(m.pinned) parts.push('📌'+m.pinned);
         if(m.forkDirs>=2) parts.push('🔱'+m.forkDirs);
-        parts.push('🔭'+m.corridorVal);
+        if(m.proximity) parts.push('🎯'+m.proximity);
         parts.push('↔'+m.mobility);
         icon=parts.join(' ');
       }
