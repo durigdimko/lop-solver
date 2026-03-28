@@ -47,6 +47,7 @@ button{padding:9px 18px;border:none;border-radius:7px;cursor:pointer;font-weight
 <canvas id="bd"></canvas>
 <div id="btns">
   <button id="sb">🔍 Анализ</button>
+  <button id="rb" style="background:#882200;color:#ffaa66;">💀 Респаун: ✓</button>
   <button id="cb">🗑 Сброс</button>
 </div>
 <div id="res"><span class="gh">Расставьте позицию и нажмите Анализ.</span></div>
@@ -58,7 +59,7 @@ const cv=document.getElementById('bd'),cx=cv.getContext('2d');
 function resize(){const mw=Math.min(window.innerWidth-20,420);CELL=Math.floor((mw-MG)/COLS);cv.width=CELL*COLS+MG;cv.height=CELL*ROWS;}
 resize();
 
-let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[];
+let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true;
 
 const PI={
   red:  {ch:'車',cl:'red', v:0},
@@ -352,18 +353,16 @@ function posScore(b, mr, mc){
   // 3. Fork bonus: threatening from 2+ directions simultaneously
   const fork=forkDirs>=2?forkDirs*6:0;
 
-  // 4. Proximity to high-value targets (approach valuable pieces)
+  // 4. Proximity: focus on SINGLE most valuable target, real distance
   let proximity=0, bestTarget='';
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
     const p=b[I(r,c)]; if(!p||PI[p]?.cl!=='blk') continue;
-    const v=PI[p].v; if(v<10) continue; // ignore low-value
-    // Rook distance: 1 if same row or col, 2 otherwise
-    const dist=(r===mr||c===mc)?1:2;
-    const score=v/dist;
-    proximity+=score;
-    if(score>proximity-score||!bestTarget) bestTarget=PI[p].ch;
+    const v=PI[p].v; if(v<10) continue;
+    const rd=Math.abs(r-mr), cd=Math.abs(c-mc);
+    const dist=r===mr?Math.max(cd,1):c===mc?Math.max(rd,1):rd+cd;
+    const score=~~(v*100/dist);
+    if(score>proximity){proximity=score;bestTarget=PI[p].ch;}
   }
-  proximity=~~(proximity);
 
   // 5. Center bonus (soft)
   const cr=Math.max(0,2-Math.abs(mr-4));
@@ -397,7 +396,13 @@ function evalRedMove(b, rr, rc, mr, mc){
   const capVal=cap&&PI[cap]?.cl==='blk'?captureValue(b,mr,mc):0;
   const nb=applyRed(b,rr,rc,mr,mc);
 
-  if(isAttacked(nb,mr,mc)) return {score:-99999, tag:'dead'};
+  const attacked=isAttacked(nb,mr,mc);
+  if(attacked && !capVal) return {score:-99999, tag:'dead'}; // moving to attacked empty = dead
+  if(attacked && capVal>0 && !hasRespawn) return {score:-99999, tag:'dead'}; // capture but no respawn = dead
+  if(attacked && capVal>0 && hasRespawn){
+    // Respawn capture: we die but respawn at same spot, killing attacker (no points for attacker kill)
+    return {score:capVal*1000+500, tag:'respawn', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang'};
+  }
   if(capVal>0){
     // For jiang captures: explosion happens after black's next move
     // Chain captures computed on post-explosion board
@@ -456,11 +461,12 @@ function solve(){
     solveResults=results;
     solveRedPos=[rr,rc];
     const best=results[0];
-    const hasForced=best.tag==='cap'||best.tag==='threat1'||best.tag==='threat2';
+    const hasForced=best.tag==='cap'||best.tag==='respawn'||best.tag==='threat1'||best.tag==='threat2';
 
     hl=results.map(m=>{
       let kind,label;
       if(m.tag==='dead'){kind='dead';label='💀';}
+      else if(m.tag==='respawn'){kind='capture';label=`💀+${m.capVal}`;}
       else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
       else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
@@ -480,7 +486,10 @@ function solve(){
     if(!hasForced) html+=`<b class="gw">⚠ Нет форсированных взятий — позиционный ход</b><br><br>`;
 
     html+=`<b class="gb">▶ ${cn(rr,rc)} → ${cn(best.r,best.c)}</b>`;
-    if(best.tag==='cap'){
+    if(best.tag==='respawn'){
+      html+=` — <span class="gw">💀🔄 +${best.capVal} (${best.capPiece})${best.isBoom?' 💥':''} — респаун</span>`;
+    }
+    else if(best.tag==='cap'){
       html+=` — <span class="gs">✅ +${best.capVal} (${best.capPiece})`;
       if(best.isBoom) html+=' 💥';
       if(best.chain) html+=` → ⚡+${best.g1c||best.g2c}`;
@@ -504,6 +513,7 @@ function solve(){
     for(const m of results){
       let cls='gh', icon='○';
       if(m.tag==='dead'){cls='gd';icon='💀';}
+      else if(m.tag==='respawn'){cls='gw';icon=`💀🔄 +${m.capVal} (${m.capPiece})${m.isBoom?' 💥':''} — респаун`;}
       else if(m.tag==='cap'){cls='gs';icon=`✅ +${m.capVal} (${m.capPiece})${m.isBoom?' 💥':''}${m.chain?' → ⚡+'+( m.g1c||m.g2c):''}`;}
       else if(m.tag==='threat1'){cls='gs';icon=`⚡ +${m.g1} за 2 хода`;}
       else if(m.tag==='threat2'){cls='gw';icon=`⚡ +${m.g2} за 3 хода`;}
@@ -779,6 +789,11 @@ document.getElementById('pal').addEventListener('touchstart',e=>{
   drag={type:t,fromR:-1,fromC:-1,px:touch.clientX,py:touch.clientY};
 },{passive:true});
 document.getElementById('sb').addEventListener('click',solve);
+document.getElementById('rb').addEventListener('click',()=>{
+  hasRespawn=!hasRespawn;
+  document.getElementById('rb').textContent=hasRespawn?'💀 Респаун: ✓':'💀 Респаун: ✗';
+  document.getElementById('rb').style.background=hasRespawn?'#882200':'#333';
+});
 
 function loadDefault(){
   board=new Array(ROWS*COLS).fill(null);
