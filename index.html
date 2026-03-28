@@ -390,12 +390,10 @@ function evalRedMove(b, rr, rc, mr, mc){
   const g2=maxGuaranteed(nb, mr, mc, pcnt<=5?2:1);
 
   const pos=posScore(nb, mr, mc);
-  // Threats: value*10000 (no immediacy bonus), threats always < same-value capture
-  const score=g1*10000 + g2*100 + (g1||g2?1:0) + pos.ps;
-  let tag;
-  if(g1>0) tag='threat1';
-  else if(g2>0) tag='threat2';
-  else tag='pos';
+  let score, tag;
+  if(g1>0){ tag='threat1'; score=g1*10000 + g2*100 + 1; }
+  else if(g2>0){ tag='threat2'; score=g2*100 + 1; }
+  else{ tag='pos'; score=pos.ps; }
   return {score, tag, g1, g2, ...pos};
 }
 
