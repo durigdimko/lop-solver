@@ -767,7 +767,7 @@ function saveBoard(){
   for(let i=0;i<board.length;i++) s+=board[i]?PM[board[i]]:'0';
   // RLE compress: runs of '0'
   s=s.replace(/0+/g,m=>m.length>1?m.length+'_':'0');
-  history.replaceState(null,'','#'+s);
+  location.hash=s;
   try{localStorage.setItem('lop_board',s);}catch(e){}
 }
 function loadSaved(){
