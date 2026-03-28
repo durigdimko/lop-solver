@@ -593,7 +593,7 @@ function solve(){
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
       else if(m.tag==='semi'){kind='threat2';label=`~${m.sfFrac}%`;}
       else{kind='pos';label=m.safeExits!=null?`🚪${m.safeExits}`:'';}
-      if(m===best&&m.score>0) kind='best';
+      if(m===best&&m.score>0&&kind!=='boom') kind='best';
       return{r:m.r,c:m.c,kind,label,score:m.score,tag:m.tag};
     });
 
