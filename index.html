@@ -441,25 +441,57 @@ function evalRedMove(b, rr, rc, mr, mc){
 
   const pos=posScore(nb, mr, mc);
   let score, tag, sfVal=0, sfFrac=0, sfDanger=0;
-  if(g1>0){ tag='threat1'; score=g1*10000 + g2*5000 + 1; }
-  else if(g2>0){ tag='threat2'; score=g2*5000 + 1; }
+  if(g1>0){ tag='threat1'; score=g1*10000 + g2*100 + 1; }
+  else if(g2>0){ tag='threat2'; score=g2*10000 + 1; }
   else{
-    // Semi-forced: only compute when few pieces (expensive with many)
-    if(pcnt<=6){
-      const bm=allBlackMoves(nb);
-      if(bm.length>0){
-        let sfAllow=0,sfTotal=0;
-        for(const m of bm){
-          if(m.killsRed){sfDanger++;continue;}
-          const nb2=applyBlack(nb,m.r,m.c,m.mr,m.mc);
-          const cv=bestCapVal(nb2,mr,mc);
-          if(cv>0){sfAllow++;sfTotal+=cv;}
-          else if(isAttacked(nb2,mr,mc)) sfDanger++;
+    // Semi-forced: estimate capture probability
+    // Fast path (many pieces): approximate from direct threats + escape counts
+    // Slow path (few pieces): full simulation
+    const caps=safeCapturesFrom(nb,mr,mc);
+    if(caps.length>0){
+      const bestCap=caps.reduce((a,b)=>a.val>=b.val?a:b);
+      if(pcnt<=6){
+        // Full simulation for accuracy
+        const bm=allBlackMoves(nb);
+        if(bm.length>0){
+          let sfAllow=0,sfTotal=0;
+          for(const m of bm){
+            if(m.killsRed){sfDanger++;continue;}
+            const nb2=applyBlack(nb,m.r,m.c,m.mr,m.mc);
+            const cv=bestCapVal(nb2,mr,mc);
+            if(cv>0){sfAllow++;sfTotal+=cv;}
+            else if(isAttacked(nb2,mr,mc)) sfDanger++;
+          }
+          sfFrac=sfAllow/bm.length;
+          sfVal=sfAllow>0?sfTotal/sfAllow:0;
+          const dangerRatio=sfDanger/bm.length;
+          if(dangerRatio>0) sfFrac*=(1-dangerRatio*2);
         }
-        sfFrac=sfAllow/bm.length;
-        sfVal=sfAllow>0?sfTotal/sfAllow:0;
-        const dangerRatio=sfDanger/bm.length;
-        if(dangerRatio>0) sfFrac*=(1-dangerRatio*2);
+      } else {
+        // Fast approximation: count escape moves of threatened pieces
+        // Most black moves (by other pieces) don't affect the capture
+        const bm=allBlackMoves(nb);
+        if(bm.length>0){
+          let escapeMoves=0;
+          for(const cap of caps){
+            // Count moves of this piece that leave it uncapturable
+            const pMoves=blackPieceMoves(nb,cap.r,cap.c);
+            for(const[pr,pc]of pMoves){
+              const p=nb[I(pr,pc)];
+              if(p&&PI[p]?.cl==='blk') continue;
+              // After this piece moves away, can red still capture something?
+              const nb2=applyBlack(nb,cap.r,cap.c,pr,pc);
+              if(bestCapVal(nb2,mr,mc)<=0) escapeMoves++;
+            }
+          }
+          // Also count moves that kill red
+          let killMoves=bm.filter(m=>m.killsRed).length;
+          sfDanger=killMoves;
+          sfFrac=Math.max(0,1-(escapeMoves+killMoves)/bm.length);
+          sfVal=bestCap.val;
+          // Check if rook gets attacked after some escapes
+          if(killMoves>0) sfFrac*=(1-killMoves*2/bm.length);
+        }
       }
     }
     if(sfFrac>=0.9&&sfVal>=8){
