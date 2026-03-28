@@ -364,14 +364,26 @@ function posScore(b, mr, mc){
     if(score>proximity){proximity=score;bestTarget=PI[p].ch;}
   }
 
-  // 5. Center bonus (soft)
+  // 5. Safe escapes: how many non-attacked squares can we reach?
+  let safeExits=0;
+  for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+    let nr=mr+dr,nc=mc+dc;
+    while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+      const p=b[I(nr,nc)];
+      if(p) break;
+      if(!isAttacked(b,nr,nc)) safeExits++;
+      nr+=dr; nc+=dc;
+    }
+  }
+
+  // 6. Center bonus (soft)
   const cr=Math.max(0,2-Math.abs(mr-4));
   const cc=Math.max(0,2-Math.abs(mc-3.5));
   const center=~~((cr+cc)*2);
 
-  // Composite: proximity >> mobility > fork > pinned > center
-  const ps=proximity*10 + mobility*5 + fork*50 + pinned*3 + center*2 + xrayVal + corridorVal;
-  return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,proximity,bestTarget,ps};
+  // Composite: safeExits critical >> proximity > mobility > fork
+  const ps=safeExits*100 + proximity*5 + mobility*3 + fork*50 + pinned*2 + center + xrayVal + corridorVal;
+  return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,proximity,bestTarget,safeExits,ps};
 }
 
 // Post-capture quality: how good is the square AFTER we take a piece?
@@ -458,9 +470,11 @@ function solve(){
       return{r:mr,c:mc,...res};
     });
 
-    // Respawn captures only if no safe captures/threats exist
+    // Respawn captures only if no safe captures/threats exist, and only for valuable pieces (30+)
     const hasBetter=results.some(m=>m.tag==='cap'||m.tag==='threat1'||m.tag==='threat2');
-    if(hasBetter) results.forEach(m=>{if(m.tag==='respawn') m.score=-99999;});
+    results.forEach(m=>{
+      if(m.tag==='respawn'&&(hasBetter||m.capVal<30)) m.score=-99999;
+    });
 
     results.sort((a,b)=>b.score-a.score);
     solveResults=results;
@@ -475,7 +489,7 @@ function solve(){
       else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
       else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
-      else{kind='pos';label=m.pinned?`📌${m.pinned}`:m.forkDirs>=2?`🔱${m.forkDirs}`:m.proximity?`🎯${m.proximity}`:'';}
+      else{kind='pos';label=m.safeExits!=null?`🚪${m.safeExits}`:'';}
       if(m===best&&m.score>0) kind='best';
       return{r:m.r,c:m.c,kind,label,score:m.score,tag:m.tag};
     });
@@ -506,8 +520,9 @@ function solve(){
       let desc=[];
       if(best.pinned) desc.push(`📌${best.pinned}`);
       if(best.forkDirs>=2) desc.push(`🔱форк×${best.forkDirs}`);
-      if(best.proximity) desc.push(`🎯${best.bestTarget||''}≈${best.proximity}`);
-      desc.push(`↔${best.mobility}`);
+      if(best.safeExits!=null) desc.push(`🚪${best.safeExits}`);
+      if(best.proximity) desc.push(`🎯${best.bestTarget||''}`);
+      if(best.mobility!=null) desc.push(`↔${best.mobility}`);
       html+=` — <span class="gw">${desc.join(' ')}</span>`;
     }
     html+='<br>';
@@ -527,7 +542,7 @@ function solve(){
         let parts=[];
         if(m.pinned) parts.push('📌'+m.pinned);
         if(m.forkDirs>=2) parts.push('🔱'+m.forkDirs);
-        if(m.proximity) parts.push('🎯'+m.proximity);
+        if(m.safeExits!=null) parts.push('🚪'+m.safeExits);
         parts.push('↔'+m.mobility);
         icon=parts.join(' ');
       }
