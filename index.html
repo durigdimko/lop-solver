@@ -378,8 +378,8 @@ function evalRedMove(b, rr, rc, mr, mc){
     const chain=g1||g2;
     const totalVal=capVal+(g1||0);
     const tempo=postCapScore(nb,mr,mc);
-    // Immediate capture: value*10000 + 5000 bonus for being immediate
-    return {score:totalVal*10000+5000+g2*5+tempo, tag:'cap', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang', tempo, chain, g1c:g1, g2c:g2};
+    // Immediate capture: value*10000 + 5000 bonus for being immediate + g2 chain bonus
+    return {score:totalVal*10000+5000+g2*5000+tempo, tag:'cap', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang', tempo, chain, g1c:g1, g2c:g2};
   }
 
   // g1: guaranteed within 2 total red moves (move here + capture next)
