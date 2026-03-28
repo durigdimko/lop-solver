@@ -48,6 +48,7 @@ button{padding:9px 18px;border:none;border-radius:7px;cursor:pointer;font-weight
 <div id="btns">
   <button id="sb">🔍 Анализ</button>
   <button id="rb" style="background:#882200;color:#ffaa66;">💀 Респаун: ✓</button>
+  <button id="ub" style="background:#333;color:#88bbff;">⚡ Рывок: ✗</button>
   <button id="cb">🗑 Сброс</button>
 </div>
 <div id="res"><span class="gh">Расставьте позицию и нажмите Анализ.</span></div>
@@ -59,7 +60,7 @@ const cv=document.getElementById('bd'),cx=cv.getContext('2d');
 function resize(){const mw=Math.min(window.innerWidth-20,420);CELL=Math.floor((mw-MG)/COLS);cv.width=CELL*COLS+MG;cv.height=CELL*ROWS;}
 resize();
 
-let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true,posHistory=[];
+let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true,hasUnstoppable=false,posHistory=[];
 
 const PI={
   red:  {ch:'車',cl:'red', v:0},
@@ -519,6 +520,36 @@ function showPlanForMove(mr,mc,depth){
   draw();
 }
 
+// ---- Unstoppable (Рывок) skill ----
+// Rook passes through all pieces in a line, destroying black pieces on the path
+function evalUnstoppable(b,rr,rc){
+  const results=[];
+  for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+    let nr=rr+dr,nc=rc+dc,pathVal=0,pieces=[];
+    while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+      const p=b[I(nr,nc)];
+      if(p&&PI[p]?.cl==='blk'){pathVal+=PI[p].v;pieces.push(PI[p].ch);}
+      if(pathVal>0){
+        // Build board after unstoppable move
+        const nb=[...b];nb[I(rr,rc)]=null;
+        let cr=rr+dr,cc=rc+dc;
+        while(true){
+          if(nb[I(cr,cc)]&&PI[nb[I(cr,cc)]]?.cl==='blk') nb[I(cr,cc)]=null;
+          if(cr===nr&&cc===nc) break;
+          cr+=dr;cc+=dc;
+        }
+        nb[I(nr,nc)]='red';
+        const safe=!isAttacked(nb,nr,nc);
+        const g1=safe?maxGuaranteed(nb,nr,nc,0):0;
+        results.push({r:nr,c:nc,pathVal,pieces:[...pieces],safe,g1,
+          score:pathVal*10000+(safe?5000:(hasRespawn?500:-99999))+g1*10000});
+      }
+      nr+=dr;nc+=dc;
+    }
+  }
+  return results.sort((a,b)=>b.score-a.score);
+}
+
 // ---- Main solver ----
 function solve(){
   const rp=findRed(board);
@@ -574,7 +605,10 @@ function solve(){
     draw();
 
     let html='';
-    if(!hasForced) html+=`<b class="gw">⚠ Нет форсированных взятий — позиционный ход</b><br><br>`;
+    // Blocked detection: all moves are dead or very bad
+    const safeMoves=results.filter(m=>m.tag!=='dead'&&m.score>0);
+    if(safeMoves.length===0) html+=`<b class="gd">⛔ Пацаны, я словил маслину (Game Over)${hasUnstoppable?' — жми ⚡ Рывок!':''}</b><br><br>`;
+    else if(!hasForced) html+=`<b class="gw">⚠ Нет форсированных взятий — позиционный ход</b><br><br>`;
 
     html+=`<b class="gb">▶ ${cn(rr,rc)} → ${cn(best.r,best.c)}</b>`;
     if(best.tag==='respawn'){
@@ -622,6 +656,22 @@ function solve(){
       }
       html+=`<span class="${cls}">${icon}</span> <span class="gh">${cn(m.r,m.c)}</span><br>`;
     }
+
+    // Unstoppable skill analysis
+    if(hasUnstoppable){
+      const uMoves=evalUnstoppable(board,rr,rc);
+      if(uMoves.length>0){
+        html+='<br><b style="color:#44aaff">⚡ Рывок (топ-5):</b><br>';
+        for(const m of uMoves.slice(0,5)){
+          const cls=m.safe?'gs':'gd';
+          html+=`<span class="${cls}">⚡ +${m.pathVal} (${m.pieces.join('+')})</span>`;
+          html+=` <span class="gh">${cn(m.r,m.c)}${m.safe?'':' 💀'}${m.g1?' → +'+m.g1:''}</span><br>`;
+        }
+      } else {
+        html+='<br><span class="gh">⚡ Рывок: нет целей на линиях</span><br>';
+      }
+    }
+
     document.getElementById('res').innerHTML=html;
   },10);
 }
@@ -891,6 +941,11 @@ document.getElementById('rb').addEventListener('click',()=>{
   hasRespawn=!hasRespawn;
   document.getElementById('rb').textContent=hasRespawn?'💀 Респаун: ✓':'💀 Респаун: ✗';
   document.getElementById('rb').style.background=hasRespawn?'#882200':'#333';
+});
+document.getElementById('ub').addEventListener('click',()=>{
+  hasUnstoppable=!hasUnstoppable;
+  document.getElementById('ub').textContent=hasUnstoppable?'⚡ Рывок: ✓':'⚡ Рывок: ✗';
+  document.getElementById('ub').style.background=hasUnstoppable?'#1a4488':'#333';
 });
 
 function loadDefault(){
