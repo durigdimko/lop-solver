@@ -222,6 +222,8 @@ function allBlackMoves(b){
       moves.push({r,c,mr,mc,killsRed:b[I(mr,mc)]==='red',val:PI[t].v});
     }
   }
+  // Order: kills red first, then save most valuable pieces first (better alpha-beta pruning)
+  moves.sort((a,b)=>(b.killsRed-a.killsRed)||(b.val-a.val));
   return moves;
 }
 
@@ -243,32 +245,38 @@ function bestCapVal(b, rr, rc){
   return c.length>0 ? Math.max(...c.map(x=>x.val)) : 0;
 }
 
-// Minimax: black responds first (must move), then red acts.
+// Minimax with alpha-beta pruning.
 // depth = additional red positional moves allowed (0 = capture only).
 function maxGuaranteed(b, rr, rc, depth){
-  function redBest(board, rr, rc, d){
+  function redMax(board, rr, rc, d, alpha, beta){
     let best=bestCapVal(board, rr, rc);
-    if(d<=0) return best;
+    if(best>alpha) alpha=best;
+    if(alpha>=beta||d<=0) return best;
     for(const[mr,mc]of redMoves(board)){
       if(board[I(mr,mc)]) continue;
       const nb=applyRed(board,rr,rc,mr,mc);
       if(isAttacked(nb,mr,mc)) continue;
-      const v=maxGuaranteed(nb,mr,mc,d-1);
-      if(v>best) best=v;
+      const v=blackMin(nb,mr,mc,d-1,alpha,beta);
+      if(v>best){best=v;if(v>alpha)alpha=v;}
+      if(alpha>=beta) break;
     }
     return best;
   }
-  const bMoves=allBlackMoves(b);
-  if(bMoves.length===0) return redBest(b,rr,rc,depth); // no black pieces
-  let worst=Infinity;
-  for(const bm of bMoves){
-    if(bm.killsRed) return 0;
-    const nb=applyBlack(b,bm.r,bm.c,bm.mr,bm.mc);
-    const v=redBest(nb,rr,rc,depth);
-    if(v<worst) worst=v;
-    if(worst<=0) return 0;
+  function blackMin(board, rr, rc, d, alpha, beta){
+    const bMoves=allBlackMoves(board);
+    if(bMoves.length===0) return redMax(board,rr,rc,d,alpha,beta);
+    let worst=Infinity;
+    for(const bm of bMoves){
+      if(bm.killsRed) return 0;
+      const nb=applyBlack(board,bm.r,bm.c,bm.mr,bm.mc);
+      const v=redMax(nb,rr,rc,d,alpha,worst<beta?worst:beta);
+      if(v<worst){worst=v;if(v<beta)beta=v;}
+      if(alpha>=beta) break;
+      if(worst<=0) return 0;
+    }
+    return worst;
   }
-  return worst;
+  return blackMin(b,rr,rc,depth,0,Infinity);
 }
 
 // Extract plan (principal variation) for display.
@@ -307,84 +315,80 @@ function findPlan(b, rr, rc, depth){
   return worstResult||{val:0,plan:[]};
 }
 
-// Strategic positional evaluation for rook placement
+// Strategic positional evaluation: RESTRICTION-based
+// Core idea: the rook's value is how much it constrains black pieces.
+// A piece with no escape = about to be captured. That's the goal.
 function posScore(b, mr, mc){
-  let pinned=0, mobility=0, directThreats=0, forkDirs=0;
-  let corridorVal=0, xrayVal=0;
+  // 1. Restriction: measure how constrained each black piece is
+  let restriction=0;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const t=b[I(r,c)]; if(!t||PI[t]?.cl!=='blk') continue;
+    const v=PI[t].v;
+    const moves=blackPieceMoves(b,r,c);
+    let legal=0;
+    for(const[nr,nc]of moves){
+      const p=b[I(nr,nc)];
+      if(!p||p==='red') legal++;
+    }
+    // Piece with 0 legal moves and value 20 → contributes 200
+    // Piece with 10 legal moves and value 20 → contributes ~18
+    restriction+=v*10/(legal+1);
+  }
 
-  // 1. Direct line-of-sight analysis (4 directions)
+  // 2. Direct line threats + pin detection
+  let directThreats=0, pinned=0, forkDirs=0, xrayVal=0, mobility=0;
   for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
-    let nr=mr+dr,nc=mc+dc, foundFirst=false;
+    let nr=mr+dr,nc=mc+dc,foundFirst=false;
     while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
       const p=b[I(nr,nc)];
       if(!foundFirst){
-        if(!p){ mobility++; }
+        if(!p) mobility++;
         else{
           foundFirst=true;
           if(PI[p]?.cl==='blk'){
             directThreats+=PI[p].v;
             forkDirs++;
-            // Pin check: can it escape our line?
-            const moves=blackPieceMoves(b,nr,nc);
-            if(!moves.some(([er,ec])=>er!==mr&&ec!==mc)) pinned+=PI[p].v;
+            const esc=blackPieceMoves(b,nr,nc);
+            if(!esc.some(([er,ec])=>er!==mr&&ec!==mc)) pinned+=PI[p].v;
           }
         }
       } else {
-        // X-ray: pieces behind the first blocker
         if(p&&PI[p]?.cl==='blk') xrayVal+=PI[p].v;
-        if(p) break; // stop at second blocker
+        if(p) break;
       }
-      nr+=dr; nc+=dc;
+      nr+=dr;nc+=dc;
     }
   }
 
-  // 2. Full corridor scan: ALL black pieces on same row/col (future potential)
-  for(let c=0;c<COLS;c++){
-    if(c===mc) continue;
-    const p=b[I(mr,c)];
-    if(p&&PI[p]?.cl==='blk') corridorVal+=PI[p].v;
-  }
-  for(let r=0;r<ROWS;r++){
-    if(r===mr) continue;
-    const p=b[I(r,mc)];
-    if(p&&PI[p]?.cl==='blk') corridorVal+=PI[p].v;
-  }
-
-  // 3. Fork bonus: threatening from 2+ directions simultaneously
-  const fork=forkDirs>=2?forkDirs*6:0;
-
-  // 4. Proximity: focus on SINGLE most valuable target, real distance
-  let proximity=0, bestTarget='';
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const p=b[I(r,c)]; if(!p||PI[p]?.cl!=='blk') continue;
-    const v=PI[p].v; if(v<10) continue;
-    const rd=Math.abs(r-mr), cd=Math.abs(c-mc);
-    const dist=r===mr?Math.max(cd,1):c===mc?Math.max(rd,1):rd+cd;
-    const score=~~(v*100/dist);
-    if(score>proximity){proximity=score;bestTarget=PI[p].ch;}
-  }
-
-  // 5. Safe escapes: how many non-attacked squares can we reach?
+  // 3. Safe exits (survivability)
   let safeExits=0;
   for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
     let nr=mr+dr,nc=mc+dc;
     while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
-      const p=b[I(nr,nc)];
-      if(p) break;
+      if(b[I(nr,nc)]) break;
       if(!isAttacked(b,nr,nc)) safeExits++;
-      nr+=dr; nc+=dc;
+      nr+=dr;nc+=dc;
     }
   }
 
-  // 6. Center bonus (soft)
-  const cr=Math.max(0,2-Math.abs(mr-4));
-  const cc=Math.max(0,2-Math.abs(mc-3.5));
-  const center=~~((cr+cc)*2);
+  // 4. Approach: proximity to valuable targets, line-aligned preferred
+  let proximity=0, bestTarget='';
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const p=b[I(r,c)]; if(!p||PI[p]?.cl!=='blk') continue;
+    const v=PI[p].v; if(v<10) continue;
+    const onLine=r===mr||c===mc;
+    const dist=Math.max(Math.abs(r-mr)+Math.abs(c-mc),1);
+    const score=~~(v*(onLine?150:80)/dist);
+    if(score>proximity){proximity=score;bestTarget=PI[p].ch;}
+  }
 
-  // Composite: safety first, mobility second. No proximity chasing (pieces run away).
-  const safeCap=Math.min(safeExits,5);
-  const ps=safeCap*200 + mobility*10 + fork*50 + center*3;
-  return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,proximity,bestTarget,safeExits,ps};
+  // 5. Fork bonus
+  const fork=forkDirs>=2?forkDirs*6:0;
+
+  const safeCap=Math.min(safeExits,8);
+  // Composite: restriction drives progress, pins are near-captures, safety keeps us alive
+  const ps=restriction*20 + pinned*100 + directThreats*15 + fork*50 + safeCap*80 + xrayVal*5 + proximity*2;
+  return {pinned,mobility,directThreats,forkDirs,corridorVal:0,xrayVal,fork,center:0,proximity,bestTarget,safeExits,ps,restriction};
 }
 
 // Post-capture quality: how good is the square AFTER we take a piece?
@@ -430,19 +434,41 @@ function evalRedMove(b, rr, rc, mr, mc){
   }
 
   // g1: guaranteed within 2 total red moves (move here + capture next)
-  // g2: guaranteed within 3 total red moves (move here + reposition + capture)
+  // g2: deeper guaranteed search (alpha-beta enables deeper depths)
   const g1=maxGuaranteed(nb, mr, mc, 0);
   const pcnt=nb.filter(x=>x&&PI[x]?.cl==='blk').length;
-  const g2=maxGuaranteed(nb, mr, mc, pcnt<=3?2:1);
+  const g2=maxGuaranteed(nb, mr, mc, pcnt<=2?3:pcnt<=5?2:1);
 
   const pos=posScore(nb, mr, mc);
-  let score, tag;
-  if(g1>0){ tag='threat1'; score=g1*10000 + g2*100 + 1; }
-  else if(g2>0){ tag='threat2'; score=g2*100 + 1; }
-  else{ tag='pos'; score=pos.ps; }
-  // Anti-oscillation: penalize returning to any of last 4 positions
-  if(tag==='pos'&&posHistory.some(p=>p[0]===mr&&p[1]===mc)) score=~~(score*0.2);
-  return {score, tag, g1, g2, ...pos};
+  let score, tag, sfVal=0, sfFrac=0;
+  if(g1>0){ tag='threat1'; score=g1*10000 + g2*5000 + 1; }
+  else if(g2>0){ tag='threat2'; score=g2*5000 + 1; }
+  else{
+    // Semi-forced: what fraction of black responses still allow red to capture?
+    const bm=allBlackMoves(nb);
+    if(bm.length>0){
+      let sfAllow=0,sfTotal=0;
+      for(const m of bm){
+        if(m.killsRed) continue;
+        const nb2=applyBlack(nb,m.r,m.c,m.mr,m.mc);
+        const cv=bestCapVal(nb2,mr,mc);
+        if(cv>0){sfAllow++;sfTotal+=cv;}
+      }
+      sfFrac=bm.length>0?sfAllow/bm.length:0;
+      sfVal=sfAllow>0?sfTotal/sfAllow:0;
+    }
+    if(sfFrac>=0.4&&sfVal>=8){
+      tag='semi'; score=~~(sfVal*sfFrac*1000)+pos.ps;
+    } else {
+      tag='pos'; score=pos.ps;
+    }
+  }
+  // Hard anti-oscillation: BAN returning to recent positions for positional/semi moves
+  if(posHistory.some(p=>p[0]===mr&&p[1]===mc)){
+    if(tag==='pos'||tag==='semi') score=-99999;
+    else score=~~(score*0.5);
+  }
+  return {score, tag, g1, g2, sfVal:~~sfVal, sfFrac:~~(sfFrac*100), ...pos};
 }
 
 // Globals for plan display
@@ -462,7 +488,7 @@ function solve(){
   if(!rp){document.getElementById('res').innerHTML='<span class="gh">⚠️ Поставьте красную 車</span>';hl=[];draw();return;}
   const[rr,rc]=rp;
   posHistory.push([rr,rc]);
-  if(posHistory.length>4) posHistory.shift();
+  if(posHistory.length>6) posHistory.shift();
   const moves=redMoves(board);
   if(!moves.length){document.getElementById('res').innerHTML='<span class="gd">⛔ Нет ходов</span>';hl=[];draw();return;}
   document.getElementById('res').innerHTML='<span class="gh">⏳ Считаю...</span>';
@@ -476,7 +502,7 @@ function solve(){
     });
 
     // Respawn captures only if no safe captures/threats exist, and only for valuable pieces (30+)
-    const hasBetter=results.some(m=>m.tag==='cap'||m.tag==='threat1'||m.tag==='threat2');
+    const hasBetter=results.some(m=>m.tag==='cap'||m.tag==='threat1'||m.tag==='threat2'||m.tag==='semi');
     results.forEach(m=>{
       if(m.tag==='respawn'&&(hasBetter||m.capVal<30)) m.score=-99999;
     });
@@ -485,7 +511,7 @@ function solve(){
     solveResults=results;
     solveRedPos=[rr,rc];
     const best=results[0];
-    const hasForced=best.tag==='cap'||best.tag==='respawn'||best.tag==='threat1'||best.tag==='threat2';
+    const hasForced=best.tag==='cap'||best.tag==='respawn'||best.tag==='threat1'||best.tag==='threat2'||best.tag==='semi';
 
     hl=results.map(m=>{
       let kind,label;
@@ -494,6 +520,7 @@ function solve(){
       else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
       else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
+      else if(m.tag==='semi'){kind='threat2';label=`~${m.sfFrac}%`;}
       else{kind='pos';label=m.safeExits!=null?`🚪${m.safeExits}`:'';}
       if(m===best&&m.score>0) kind='best';
       return{r:m.r,c:m.c,kind,label,score:m.score,tag:m.tag};
@@ -521,13 +548,14 @@ function solve(){
     }
     else if(best.tag==='threat1') html+=` — <span class="gs">⚡ гарант. +${best.g1} за 2 хода</span>`;
     else if(best.tag==='threat2') html+=` — <span class="gw">⚡ гарант. +${best.g2} за 3 хода</span>`;
+    else if(best.tag==='semi') html+=` — <span class="gw">🎲 ${best.sfFrac}% шанс → +${best.sfVal}</span>`;
     else{
       let desc=[];
+      if(best.restriction) desc.push(`🔒${~~best.restriction}`);
       if(best.pinned) desc.push(`📌${best.pinned}`);
       if(best.forkDirs>=2) desc.push(`🔱форк×${best.forkDirs}`);
       if(best.safeExits!=null) desc.push(`🚪${best.safeExits}`);
       if(best.proximity) desc.push(`🎯${best.bestTarget||''}`);
-      if(best.mobility!=null) desc.push(`↔${best.mobility}`);
       html+=` — <span class="gw">${desc.join(' ')}</span>`;
     }
     html+='<br>';
@@ -542,13 +570,14 @@ function solve(){
       else if(m.tag==='cap'){cls='gs';icon=`✅ +${m.capVal} (${m.capPiece})${m.isBoom?' 💥':''}${m.chain?' → ⚡+'+( m.g1c||m.g2c):''}`;}
       else if(m.tag==='threat1'){cls='gs';icon=`⚡ +${m.g1} за 2 хода`;}
       else if(m.tag==='threat2'){cls='gw';icon=`⚡ +${m.g2} за 3 хода`;}
+      else if(m.tag==='semi'){cls='gw';icon=`🎲 ${m.sfFrac}% → +${m.sfVal}`;}
       else{
         cls=m===best?'gw':'gh';
         let parts=[];
+        if(m.restriction) parts.push('🔒'+~~m.restriction);
         if(m.pinned) parts.push('📌'+m.pinned);
         if(m.forkDirs>=2) parts.push('🔱'+m.forkDirs);
         if(m.safeExits!=null) parts.push('🚪'+m.safeExits);
-        parts.push('↔'+m.mobility);
         icon=parts.join(' ');
       }
       html+=`<span class="${cls}">${icon}</span> <span class="gh">${cn(m.r,m.c)}</span><br>`;
