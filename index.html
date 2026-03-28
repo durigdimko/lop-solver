@@ -588,7 +588,7 @@ function solve(){
       let kind,label;
       if(m.tag==='dead'){kind='dead';label='💀';}
       else if(m.tag==='respawn'){kind='respawn';label=`💀+${m.capVal}`;}
-      else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
+      else if(m.tag==='cap'){kind=m.isBoom?'boom':'capture';label=`+${m.capVal}`;}
       else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
       else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
       else if(m.tag==='semi'){kind='threat2';label=`~${m.sfFrac}%`;}
@@ -715,6 +715,14 @@ function draw(){
       cx.fillStyle='rgba(255,210,0,.5)';cx.fillRect(x,y,CELL,CELL);
       cx.strokeStyle='#ffcc00';cx.lineWidth=2;cx.strokeRect(x+1,y+1,CELL-2,CELL-2);
       if(h.label){cx.font=`bold ${~~(CELL*.28)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#4a3000';cx.fillText(h.label,px,py);}
+    } else if(h.kind==='boom'){
+      // Jiang capture: golden flame glow
+      cx.save();
+      cx.shadowColor='#ff8800';cx.shadowBlur=CELL*.6;
+      cx.fillStyle='rgba(255,180,0,.5)';cx.fillRect(x,y,CELL,CELL);
+      cx.restore();
+      cx.strokeStyle='#ffaa00';cx.lineWidth=3;cx.strokeRect(x+1,y+1,CELL-2,CELL-2);
+      cx.font=`bold ${~~(CELL*.26)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#fff';cx.fillText('💥'+h.label,px,py);
     } else if(h.kind==='capture'){
       cx.fillStyle='rgba(0,200,80,.35)';cx.fillRect(x,y,CELL,CELL);
       cx.font=`bold ${~~(CELL*.26)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#006622';cx.fillText(h.label,px,py);
