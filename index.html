@@ -458,7 +458,7 @@ function evalRedMove(b, rr, rc, mr, mc){
       sfVal=sfAllow>0?sfTotal/sfAllow:0;
     }
     if(sfFrac>=0.4&&sfVal>=8){
-      tag='semi'; score=~~(sfVal*sfFrac*1000)+pos.ps;
+      tag='semi'; score=~~(sfVal*sfFrac*10000)+~~(pos.ps/10);
     } else {
       tag='pos'; score=pos.ps;
     }
