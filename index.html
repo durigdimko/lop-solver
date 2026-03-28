@@ -758,27 +758,30 @@ function loadDefault(){
   board=new Array(ROWS*COLS).fill(null);
   board[I(6,3)]='red';board[I(2,3)]='zu';board[I(2,5)]='zu';board[I(2,7)]='zu';
 }
-// Encode board to compact URL hash
-const PC='0recsmapbjg'; // 0=empty, r=red, e=zu, c=shi, s=xiang, m=ma, a=pao, b=bju, j=jiang (g not used, just padding)
-const PM={red:'r',zu:'e',shi:'c',xiang:'s',ma:'m',pao:'a',bju:'b',jiang:'j'};
-const PR={r:'red',e:'zu',c:'shi',s:'xiang',m:'ma',a:'pao',b:'bju',j:'jiang'};
+// Sparse board encoding: 2 chars per piece (position*9+type in base64url)
+const B64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const B64R=Object.fromEntries([...B64].map((c,i)=>[c,i]));
+const PV={red:1,zu:2,shi:3,xiang:4,ma:5,pao:6,bju:7,jiang:8};
+const VP=[null,'red','zu','shi','xiang','ma','pao','bju','jiang'];
 function saveBoard(){
   let s='';
-  for(let i=0;i<board.length;i++) s+=board[i]?PM[board[i]]:'0';
-  // RLE compress: runs of '0'
-  s=s.replace(/0+/g,m=>m.length>1?m.length+'_':'0');
-  location.hash=s;
+  for(let i=0;i<72;i++){
+    const v=PV[board[i]];
+    if(v){const idx=i*9+v;s+=B64[~~(idx/64)]+B64[idx%64];}
+  }
+  history.replaceState(null,'','#'+s);
   try{localStorage.setItem('lop_board',s);}catch(e){}
 }
 function loadSaved(){
   let s=location.hash.slice(1);
   if(!s) try{s=localStorage.getItem('lop_board')||'';}catch(e){}
-  if(!s) return false;
-  // Decompress RLE
-  s=s.replace(/(\d+)_/g,(m,n)=>'0'.repeat(+n));
-  if(s.length!==ROWS*COLS) return false;
-  board=new Array(ROWS*COLS).fill(null);
-  for(let i=0;i<s.length;i++) if(s[i]!=='0') board[i]=PR[s[i]]||null;
+  if(!s||s.length%2!==0) return false;
+  board=new Array(72).fill(null);
+  for(let i=0;i<s.length;i+=2){
+    const idx=B64R[s[i]]*64+B64R[s[i+1]];
+    const pos=~~(idx/9),type=idx%9;
+    if(pos<72&&type>0&&type<9) board[pos]=VP[type];
+  }
   return true;
 }
 
