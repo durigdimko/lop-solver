@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>LoP Solver</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&text=%E8%BB%8A%E5%8D%92%E5%A3%AB%E8%B1%A1%E9%A6%AC%E7%82%AE%E5%B0%86&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#1c0a00;color:#f0d090;font-family:'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:10px;user-select:none;}
+h2{color:#ffcc44;margin:6px 0 6px;font-size:1em;}
+#pal{display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap;justify-content:center;}
+.pb{width:44px;height:44px;border-radius:50%;border:3px solid #6b3410;cursor:pointer;font-size:15px;font-weight:bold;display:flex;align-items:center;justify-content:center;position:relative;flex-direction:column;gap:0;}
+.pb.bk{background:radial-gradient(circle at 40% 35%,#5a3010,#1a0800);color:#d4a040;font-family:'Ma Shan Zheng','KaiTi',serif;}
+.pb.rd{background:radial-gradient(circle at 40% 35%,#dd4422,#8b1100);color:#fff;font-family:'Ma Shan Zheng','KaiTi',serif;}
+.pb.er{background:#333;color:#888;font-size:13px;}
+.pb.sel{border-color:#ffdd00;box-shadow:0 0 10px #ffdd0088;}
+.pts{font-size:8px;color:#ffcc44;font-weight:normal;line-height:1;}
+canvas{border:3px solid #7a3a10;border-radius:3px;cursor:pointer;display:block;max-width:100%;touch-action:none;}
+#btns{display:flex;gap:8px;margin:7px 0;}
+button{padding:9px 18px;border:none;border-radius:7px;cursor:pointer;font-weight:bold;font-size:14px;}
+#sb{background:#cc8800;color:#fff;}
+#cb{background:#444;color:#ccc;}
+#res{background:#2a1200;border:1px solid #7a3a10;border-radius:8px;padding:10px 12px;width:100%;max-width:420px;font-size:13px;line-height:1.8;min-height:40px;}
+.gb{color:#ffdd44;font-weight:bold;}
+.gs{color:#88ee88;}
+.gw{color:#ffcc44;}
+.gd{color:#ff7755;}
+.gh{color:#888;font-size:11px;}
+</style>
+</head>
+<body>
+<h2>🎴 Legend of Phoenix — 車 Solver</h2>
+<div id="pal">
+  <div class="pb rd sel" data-t="red">車</div>
+  <div class="pb bk" data-t="zu">卒<span class="pts">8</span></div>
+  <div class="pb bk" data-t="shi">士<span class="pts">10</span></div>
+  <div class="pb bk" data-t="xiang">象<span class="pts">15</span></div>
+  <div class="pb bk" data-t="ma">馬<span class="pts">20</span></div>
+  <div class="pb bk" data-t="pao">炮<span class="pts">20</span></div>
+  <div class="pb bk" data-t="bju">車<span class="pts">30</span></div>
+  <div class="pb bk" data-t="jiang">将<span class="pts">100</span></div>
+  <div class="pb er" data-t="erase">✕</div>
+</div>
+<canvas id="bd"></canvas>
+<div id="btns">
+  <button id="sb">🔍 Анализ</button>
+  <button id="cb">🗑 Сброс</button>
+</div>
+<div id="res"><span class="gh">Расставьте позицию и нажмите Анализ.</span></div>
+
+<script>
+const ROWS=9,COLS=8,MG=22;
+let CELL=44;
+const cv=document.getElementById('bd'),cx=cv.getContext('2d');
+function resize(){const mw=Math.min(window.innerWidth-20,420);CELL=Math.floor((mw-MG)/COLS);cv.width=CELL*COLS+MG;cv.height=CELL*ROWS;}
+resize();
+
+let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[];
+
+const PI={
+  red:  {ch:'車',cl:'red', v:0},
+  zu:   {ch:'卒',cl:'blk', v:8},
+  shi:  {ch:'士',cl:'blk', v:10},
+  xiang:{ch:'象',cl:'blk', v:15},
+  ma:   {ch:'馬',cl:'blk', v:20},
+  pao:  {ch:'炮',cl:'blk', v:20},
+  bju:  {ch:'車',cl:'blk', v:30},
+  jiang:{ch:'将',cl:'blk', v:100},
+};
+
+const I=(r,c)=>r*COLS+c;
+
+// ---- Movement ----
+function redMoves(b){
+  const rp=findRed(b); if(!rp) return [];
+  const[rr,rc]=rp, m=[];
+  for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+    let nr=rr+dr,nc=rc+dc;
+    while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+      const p=b[I(nr,nc)];
+      if(!p) m.push([nr,nc]);
+      else { if(PI[p]?.cl==='blk') m.push([nr,nc]); break; }
+      nr+=dr; nc+=dc;
+    }
+  }
+  return m;
+}
+
+function blackPieceMoves(b,r,c){
+  const t=b[I(r,c)]; if(!t||PI[t]?.cl!=='blk') return [];
+  const m=[];
+  const add=(nr,nc)=>{
+    if(nr<0||nr>=ROWS||nc<0||nc>=COLS) return false;
+    const p=b[I(nr,nc)];
+    if(!p||p==='red') m.push([nr,nc]);
+    return !p;
+  };
+  switch(t){
+    case 'zu':
+      for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]) add(r+dr,c+dc);
+      break;
+    case 'shi':
+      for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1]]) add(r+dr,c+dc);
+      break;
+    case 'xiang':
+      for(const[dr,dc]of[[-2,-2],[-2,2],[2,-2],[2,2]]){
+        const br=r+dr/2,bc=c+dc/2;
+        if(br<0||br>=ROWS||bc<0||bc>=COLS||b[I(br,bc)]) continue;
+        add(r+dr,c+dc);
+      }
+      break;
+    case 'ma':
+      for(const{o:[or,oc],d}of[
+        {o:[0,1],d:[[1,2],[-1,2]]},{o:[0,-1],d:[[1,-2],[-1,-2]]},
+        {o:[1,0],d:[[2,1],[2,-1]]},{o:[-1,0],d:[[-2,1],[-2,-1]]}
+      ]){
+        const lr=r+or,lc=c+oc;
+        if(lr<0||lr>=ROWS||lc<0||lc>=COLS||b[I(lr,lc)]) continue;
+        for(const[dr,dc]of d) add(r+dr,c+dc);
+      }
+      break;
+    case 'pao':
+      for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+        let nr=r+dr,nc=c+dc,screen=false;
+        while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+          const p=b[I(nr,nc)];
+          if(!screen){ if(!p) m.push([nr,nc]); else screen=true; }
+          else { if(p){ if(p==='red') m.push([nr,nc]); break; } }
+          nr+=dr; nc+=dc;
+        }
+      }
+      break;
+    case 'bju':
+      for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+        let nr=r+dr,nc=c+dc;
+        while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+          const p=b[I(nr,nc)];
+          if(!p) m.push([nr,nc]);
+          else { if(p==='red') m.push([nr,nc]); break; }
+          nr+=dr; nc+=dc;
+        }
+      }
+      break;
+    case 'jiang':
+      for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]) add(r+dr,c+dc);
+      break;
+  }
+  return m;
+}
+
+function findRed(b){
+  for(let i=0;i<b.length;i++) if(b[i]==='red') return[~~(i/COLS),i%COLS];
+  return null;
+}
+
+function isAttacked(b,tr,tc){
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const t=b[I(r,c)]; if(!t||PI[t]?.cl!=='blk') continue;
+    if(blackPieceMoves(b,r,c).some(([mr,mc])=>mr===tr&&mc===tc)) return true;
+  }
+  return false;
+}
+
+// Apply red move. Jiang explosion: destroys row+column on capture.
+function applyRed(b,rr,rc,mr,mc){
+  const nb=[...b];
+  const captured=nb[I(mr,mc)];
+  nb[I(mr,mc)]='red'; nb[I(rr,rc)]=null;
+  if(captured==='jiang'){
+    for(let c=0;c<COLS;c++) if(nb[I(mr,c)]&&nb[I(mr,c)]!=='red') nb[I(mr,c)]=null;
+    for(let r=0;r<ROWS;r++) if(nb[I(r,mc)]&&nb[I(r,mc)]!=='red') nb[I(r,mc)]=null;
+  }
+  return nb;
+}
+
+// Total value of capturing piece at (mr,mc) including jiang explosion collateral
+function captureValue(b, mr, mc){
+  const cap=b[I(mr,mc)];
+  if(!cap||PI[cap]?.cl!=='blk') return 0;
+  let val=PI[cap].v;
+  if(cap==='jiang'){
+    for(let c=0;c<COLS;c++){
+      const p=b[I(mr,c)];
+      if(c!==mc&&p&&PI[p]?.cl==='blk') val+=PI[p].v;
+    }
+    for(let r=0;r<ROWS;r++){
+      const p=b[I(r,mc)];
+      if(r!==mr&&p&&PI[p]?.cl==='blk') val+=PI[p].v;
+    }
+  }
+  return val;
+}
+
+function applyBlack(b,r,c,mr,mc){
+  const nb=[...b]; nb[I(mr,mc)]=nb[I(r,c)]; nb[I(r,c)]=null; return nb;
+}
+
+function allBlackMoves(b){
+  const moves=[];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const t=b[I(r,c)]; if(!t||PI[t]?.cl!=='blk') continue;
+    for(const[mr,mc]of blackPieceMoves(b,r,c)){
+      if(b[I(mr,mc)]&&PI[b[I(mr,mc)]]?.cl==='blk') continue;
+      moves.push({r,c,mr,mc,killsRed:b[I(mr,mc)]==='red',val:PI[t].v});
+    }
+  }
+  return moves;
+}
+
+// Safe captures with explosion-aware values
+function safeCapturesFrom(b, rr, rc){
+  const caps=[];
+  for(const[mr,mc]of redMoves(b)){
+    const p=b[I(mr,mc)];
+    if(!p||PI[p]?.cl!=='blk') continue;
+    const val=captureValue(b,mr,mc);
+    const nb2=applyRed(b,rr,rc,mr,mc);
+    if(!isAttacked(nb2,mr,mc)) caps.push({r:mr,c:mc,piece:p,val});
+  }
+  return caps;
+}
+
+function bestCapVal(b, rr, rc){
+  const c=safeCapturesFrom(b,rr,rc);
+  return c.length>0 ? Math.max(...c.map(x=>x.val)) : 0;
+}
+
+// Minimax: black responds first (must move), then red acts.
+// depth = additional red positional moves allowed (0 = capture only).
+function maxGuaranteed(b, rr, rc, depth){
+  function redBest(board, rr, rc, d){
+    let best=bestCapVal(board, rr, rc);
+    if(d<=0) return best;
+    for(const[mr,mc]of redMoves(board)){
+      if(board[I(mr,mc)]) continue;
+      const nb=applyRed(board,rr,rc,mr,mc);
+      if(isAttacked(nb,mr,mc)) continue;
+      const v=maxGuaranteed(nb,mr,mc,d-1);
+      if(v>best) best=v;
+    }
+    return best;
+  }
+  const bMoves=allBlackMoves(b);
+  if(bMoves.length===0) return redBest(b,rr,rc,depth); // no black pieces
+  let worst=Infinity;
+  for(const bm of bMoves){
+    if(bm.killsRed) return 0;
+    const nb=applyBlack(b,bm.r,bm.c,bm.mr,bm.mc);
+    const v=redBest(nb,rr,rc,depth);
+    if(v<worst) worst=v;
+    if(worst<=0) return 0;
+  }
+  return worst;
+}
+
+// Extract plan (principal variation) for display.
+// Shows red's moves in the HARDEST case (black's best defense).
+function findPlan(b, rr, rc, depth){
+  function redBestPlan(board, rr, rc, d){
+    const caps=safeCapturesFrom(board,rr,rc);
+    let best=caps.length>0?Math.max(...caps.map(c=>c.val)):0;
+    let bestCap=caps.length>0?caps.reduce((a,b)=>a.val>=b.val?a:b):null;
+    let plan=bestCap?[{r:bestCap.r,c:bestCap.c,type:'capture'}]:[];
+    if(d<=0) return {val:best,plan};
+    for(const[mr,mc]of redMoves(board)){
+      if(board[I(mr,mc)]) continue;
+      const nb=applyRed(board,rr,rc,mr,mc);
+      if(isAttacked(nb,mr,mc)) continue;
+      const sub=findPlan(nb,mr,mc,d-1);
+      if(sub.val>best){best=sub.val;plan=[{r:mr,c:mc,type:'move'},...sub.plan];}
+    }
+    return {val:best,plan};
+  }
+  const bMoves=allBlackMoves(b);
+  if(bMoves.length===0) return redBestPlan(b,rr,rc,depth);
+  // Find worst case for red (black's best defense).
+  // On value ties, prefer the plan with MORE steps (harder = more informative).
+  let worstResult=null;
+  for(const bm of bMoves){
+    if(bm.killsRed) return {val:0,plan:[]};
+    const nb=applyBlack(b,bm.r,bm.c,bm.mr,bm.mc);
+    const v=redBestPlan(nb,rr,rc,depth);
+    if(!worstResult || v.val<worstResult.val ||
+       (v.val===worstResult.val && v.plan.length>worstResult.plan.length)){
+      worstResult=v;
+    }
+    if(worstResult.val<=0) return {val:0,plan:[]};
+  }
+  return worstResult||{val:0,plan:[]};
+}
+
+// Strategic positional evaluation for rook placement
+function posScore(b, mr, mc){
+  let pinned=0, mobility=0, directThreats=0, forkDirs=0;
+  let corridorVal=0, xrayVal=0;
+
+  // 1. Direct line-of-sight analysis (4 directions)
+  for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+    let nr=mr+dr,nc=mc+dc, foundFirst=false;
+    while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+      const p=b[I(nr,nc)];
+      if(!foundFirst){
+        if(!p){ mobility++; }
+        else{
+          foundFirst=true;
+          if(PI[p]?.cl==='blk'){
+            directThreats+=PI[p].v;
+            forkDirs++;
+            // Pin check: can it escape our line?
+            const moves=blackPieceMoves(b,nr,nc);
+            if(!moves.some(([er,ec])=>er!==mr&&ec!==mc)) pinned+=PI[p].v;
+          }
+        }
+      } else {
+        // X-ray: pieces behind the first blocker
+        if(p&&PI[p]?.cl==='blk') xrayVal+=PI[p].v;
+        if(p) break; // stop at second blocker
+      }
+      nr+=dr; nc+=dc;
+    }
+  }
+
+  // 2. Full corridor scan: ALL black pieces on same row/col (future potential)
+  for(let c=0;c<COLS;c++){
+    if(c===mc) continue;
+    const p=b[I(mr,c)];
+    if(p&&PI[p]?.cl==='blk') corridorVal+=PI[p].v;
+  }
+  for(let r=0;r<ROWS;r++){
+    if(r===mr) continue;
+    const p=b[I(r,mc)];
+    if(p&&PI[p]?.cl==='blk') corridorVal+=PI[p].v;
+  }
+
+  // 3. Fork bonus: threatening from 2+ directions simultaneously
+  const fork=forkDirs>=2?forkDirs*6:0;
+
+  // 4. Center bonus: rows 3-6, cols 2-5 best for coverage of spawns
+  const cr=Math.max(0,2-Math.abs(mr-4));
+  const cc=Math.max(0,2-Math.abs(mc-3.5));
+  const center=~~((cr+cc)*2);
+
+  // Composite: pinned >> fork > mobility > center > xray > corridor(noise)
+  const ps=pinned*1000 + fork*100 + mobility*10 + center*8 + xrayVal*2 + corridorVal;
+  return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,ps};
+}
+
+// Post-capture quality: how good is the square AFTER we take a piece?
+function postCapScore(b,mr,mc){
+  // How many pieces do we threaten from the capture square?
+  let threats=0;
+  for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){
+    let nr=mr+dr,nc=mc+dc;
+    while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+      const p=b[I(nr,nc)];
+      if(!p){nr+=dr;nc+=dc;continue;}
+      if(PI[p]?.cl==='blk') threats+=PI[p].v;
+      break;
+    }
+  }
+  return threats;
+}
+
+// Evaluate a red move
+function evalRedMove(b, rr, rc, mr, mc){
+  const cap=b[I(mr,mc)];
+  const capVal=cap&&PI[cap]?.cl==='blk'?captureValue(b,mr,mc):0;
+  const nb=applyRed(b,rr,rc,mr,mc);
+
+  if(isAttacked(nb,mr,mc)) return {score:-99999, tag:'dead'};
+  if(capVal>0){
+    // Chain captures: what can we guarantee AFTER this capture?
+    const g1=maxGuaranteed(nb, mr, mc, 0);
+    const g2=maxGuaranteed(nb, mr, mc, 1);
+    const chain=g1||g2;
+    const totalVal=capVal+(g1||0);
+    const tempo=postCapScore(nb,mr,mc);
+    // Immediate capture: value*10000 + 5000 bonus for being immediate
+    return {score:totalVal*10000+5000+g2*5+tempo, tag:'cap', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang', tempo, chain, g1c:g1, g2c:g2};
+  }
+
+  // g1: guaranteed within 2 total red moves (move here + capture next)
+  // g2: guaranteed within 3 total red moves (move here + reposition + capture)
+  const g1=maxGuaranteed(nb, mr, mc, 0);
+  // Adaptive depth: fewer pieces = deeper search
+  const pcnt=nb.filter(x=>x&&PI[x]?.cl==='blk').length;
+  const g2=maxGuaranteed(nb, mr, mc, pcnt<=5?2:1);
+
+  const pos=posScore(nb, mr, mc);
+  // Threats: value*10000 (no immediacy bonus), threats always < same-value capture
+  const score=g1*10000 + g2*100 + (g1||g2?1:0) + pos.ps;
+  let tag;
+  if(g1>0) tag='threat1';
+  else if(g2>0) tag='threat2';
+  else tag='pos';
+  return {score, tag, g1, g2, ...pos};
+}
+
+// Globals for plan display
+let solveResults=[], solveRedPos=null;
+
+function showPlanForMove(mr,mc,depth){
+  if(!solveRedPos) return;
+  const nb=applyRed(board,solveRedPos[0],solveRedPos[1],mr,mc);
+  const plan=findPlan(nb,mr,mc,depth);
+  planArrows=[{r:mr,c:mc,type:'start'},...plan.plan];
+  draw();
+}
+
+// ---- Main solver ----
+function solve(){
+  const rp=findRed(board);
+  if(!rp){document.getElementById('res').innerHTML='<span class="gh">⚠️ Поставьте красную 車</span>';hl=[];draw();return;}
+  const[rr,rc]=rp;
+  const moves=redMoves(board);
+  if(!moves.length){document.getElementById('res').innerHTML='<span class="gd">⛔ Нет ходов</span>';hl=[];draw();return;}
+  document.getElementById('res').innerHTML='<span class="gh">⏳ Считаю...</span>';
+
+  setTimeout(()=>{
+    const cols='ABCDEFGH';
+    const cn=(r,c)=>`${cols[c]}${9-r}`;
+    const results=moves.map(([mr,mc])=>{
+      const res=evalRedMove(board,rr,rc,mr,mc);
+      return{r:mr,c:mc,...res};
+    }).sort((a,b)=>b.score-a.score);
+
+    solveResults=results;
+    solveRedPos=[rr,rc];
+    const best=results[0];
+    const hasForced=best.tag==='cap'||best.tag==='threat1'||best.tag==='threat2';
+
+    hl=results.map(m=>{
+      let kind,label;
+      if(m.tag==='dead'){kind='dead';label='💀';}
+      else if(m.tag==='cap'){kind='capture';label=`+${m.capVal}`;}
+      else if(m.tag==='threat1'){kind='threat1';label=`+${m.g1}`;}
+      else if(m.tag==='threat2'){kind='threat2';label=`+${m.g2}`;}
+      else{kind='pos';label=m.pinned?`📌${m.pinned}`:m.forkDirs>=2?`🔱${m.forkDirs}`:m.corridorVal?`🔭${m.corridorVal}`:'';}
+      if(m===best&&m.score>0) kind='best';
+      return{r:m.r,c:m.c,kind,label,score:m.score,tag:m.tag};
+    });
+
+    // Auto-show plan for best move
+    planArrows=[];
+    if(best.tag==='threat1'||best.tag==='threat2'){
+      showPlanForMove(best.r,best.c,best.tag==='threat1'?0:1);
+    }
+    draw();
+
+    let html='';
+    if(!hasForced) html+=`<b class="gw">⚠ Нет форсированных взятий — позиционный ход</b><br><br>`;
+
+    html+=`<b class="gb">▶ ${cn(rr,rc)} → ${cn(best.r,best.c)}</b>`;
+    if(best.tag==='cap'){
+      html+=` — <span class="gs">✅ +${best.capVal} (${best.capPiece})`;
+      if(best.isBoom) html+=' 💥';
+      if(best.chain) html+=` → ⚡+${best.g1c||best.g2c}`;
+      html+='</span>';
+    }
+    else if(best.tag==='threat1') html+=` — <span class="gs">⚡ гарант. +${best.g1} за 2 хода</span>`;
+    else if(best.tag==='threat2') html+=` — <span class="gw">⚡ гарант. +${best.g2} за 3 хода</span>`;
+    else{
+      let desc=[];
+      if(best.pinned) desc.push(`📌${best.pinned}`);
+      if(best.forkDirs>=2) desc.push(`🔱форк×${best.forkDirs}`);
+      if(best.corridorVal) desc.push(`🔭${best.corridorVal}`);
+      desc.push(`↔${best.mobility}`);
+      html+=` — <span class="gw">${desc.join(' ')}</span>`;
+    }
+    html+='<br>';
+    if(best.tag==='threat1'||best.tag==='threat2')
+      html+=`<span class="gh">нажми на ход на доске — план со стрелками</span><br>`;
+    html+='<br><b>Все ходы:</b><br>';
+
+    for(const m of results){
+      let cls='gh', icon='○';
+      if(m.tag==='dead'){cls='gd';icon='💀';}
+      else if(m.tag==='cap'){cls='gs';icon=`✅ +${m.capVal} (${m.capPiece})${m.isBoom?' 💥':''}${m.chain?' → ⚡+'+( m.g1c||m.g2c):''}`;}
+      else if(m.tag==='threat1'){cls='gs';icon=`⚡ +${m.g1} за 2 хода`;}
+      else if(m.tag==='threat2'){cls='gw';icon=`⚡ +${m.g2} за 3 хода`;}
+      else{
+        cls=m===best?'gw':'gh';
+        let parts=[];
+        if(m.pinned) parts.push('📌'+m.pinned);
+        if(m.forkDirs>=2) parts.push('🔱'+m.forkDirs);
+        parts.push('🔭'+m.corridorVal);
+        parts.push('↔'+m.mobility);
+        icon=parts.join(' ');
+      }
+      html+=`<span class="${cls}">${icon}</span> <span class="gh">${cn(m.r,m.c)}</span><br>`;
+    }
+    document.getElementById('res').innerHTML=html;
+  },10);
+}
+
+// ---- Drawing ----
+function drawArrow(x1,y1,x2,y2,color,dashed){
+  cx.save();
+  cx.strokeStyle=color;cx.lineWidth=2.5;cx.globalAlpha=0.6;
+  if(dashed) cx.setLineDash([5,5]);
+  cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke();
+  const a=Math.atan2(y2-y1,x2-x1),hs=CELL*.2;
+  cx.setLineDash([]);cx.globalAlpha=0.8;cx.fillStyle=color;
+  cx.beginPath();
+  cx.moveTo(x2,y2);
+  cx.lineTo(x2-hs*Math.cos(a-.45),y2-hs*Math.sin(a-.45));
+  cx.lineTo(x2-hs*Math.cos(a+.45),y2-hs*Math.sin(a+.45));
+  cx.closePath();cx.fill();
+  cx.restore();
+}
+
+function draw(){
+  const W=cv.width,H=cv.height,M=MG;
+  cx.fillStyle='#e8c87a';cx.fillRect(0,0,W,H);
+  cx.fillStyle='#7a4010';cx.font=`${~~(CELL*.3)}px sans-serif`;cx.textAlign='right';cx.textBaseline='middle';
+  for(let r=0;r<ROWS;r++) cx.fillText(9-r,M-3,r*CELL+CELL/2);
+  cx.strokeStyle='#7a4010';cx.lineWidth=1;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const x=M+c*CELL,y=r*CELL;
+    if(r<ROWS-1){cx.beginPath();cx.moveTo(x+CELL/2,y+CELL/2);cx.lineTo(x+CELL/2,y+CELL*1.5);cx.stroke();}
+    if(c<COLS-1){cx.beginPath();cx.moveTo(x+CELL/2,y+CELL/2);cx.lineTo(x+CELL*1.5,y+CELL/2);cx.stroke();}
+  }
+
+  // Highlights
+  for(const h of hl){
+    const x=M+h.c*CELL,y=h.r*CELL,px=x+CELL/2,py=y+CELL/2;
+    if(h.kind==='dead'){
+      cx.fillStyle='rgba(180,30,20,.25)';cx.fillRect(x,y,CELL,CELL);
+      cx.font=`${~~(CELL*.35)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';
+      cx.fillStyle='rgba(200,40,30,.7)';cx.fillText('💀',px,py);
+    } else if(h.kind==='best'){
+      cx.fillStyle='rgba(255,210,0,.5)';cx.fillRect(x,y,CELL,CELL);
+      cx.strokeStyle='#ffcc00';cx.lineWidth=2;cx.strokeRect(x+1,y+1,CELL-2,CELL-2);
+      if(h.label){cx.font=`bold ${~~(CELL*.28)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#4a3000';cx.fillText(h.label,px,py);}
+    } else if(h.kind==='capture'){
+      cx.fillStyle='rgba(0,200,80,.35)';cx.fillRect(x,y,CELL,CELL);
+      cx.font=`bold ${~~(CELL*.26)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#006622';cx.fillText(h.label,px,py);
+    } else if(h.kind==='threat1'){
+      cx.fillStyle='rgba(0,200,80,.25)';cx.fillRect(x,y,CELL,CELL);
+      cx.font=`bold ${~~(CELL*.24)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#007733';cx.fillText(h.label,px,py);
+    } else if(h.kind==='threat2'){
+      cx.fillStyle='rgba(255,180,0,.2)';cx.fillRect(x,y,CELL,CELL);
+      cx.font=`${~~(CELL*.22)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='#886600';cx.fillText(h.label,px,py);
+    } else if(h.kind==='pos'){
+      cx.fillStyle='rgba(100,150,255,.12)';cx.fillRect(x,y,CELL,CELL);
+      if(h.label){cx.font=`${~~(CELL*.2)}px sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillStyle='rgba(60,100,180,.6)';cx.fillText(h.label,px,py);}
+    } else {
+      cx.fillStyle='rgba(0,0,0,.06)';cx.fillRect(x,y,CELL,CELL);
+    }
+  }
+
+  // Plan arrows
+  if(planArrows.length>1){
+    for(let i=0;i<planArrows.length-1;i++){
+      const a=planArrows[i],b=planArrows[i+1];
+      const x1=M+a.c*CELL+CELL/2,y1=a.r*CELL+CELL/2;
+      const x2=M+b.c*CELL+CELL/2,y2=b.r*CELL+CELL/2;
+      const color=b.type==='capture'?'#ff4444':'#4499ff';
+      drawArrow(x1,y1,x2,y2,color,b.type==='move');
+    }
+    const last=planArrows[planArrows.length-1];
+    if(last.type==='capture'){
+      const lx=M+last.c*CELL+CELL/2,ly=last.r*CELL+CELL/2;
+      cx.beginPath();cx.arc(lx,ly,CELL*.22,0,Math.PI*2);
+      cx.fillStyle='rgba(255,50,30,.3)';cx.fill();
+      cx.strokeStyle='#ff3333';cx.lineWidth=2.5;cx.stroke();
+    }
+  }
+
+  // Pieces
+  const RR=CELL*.42;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const t=board[I(r,c)]; if(!t) continue;
+    drawPieceOnBoard(t,M+c*CELL+CELL/2,r*CELL+CELL/2,1);
+  }
+  cx.fillStyle='#8b5020';cx.font=`${~~(CELL*.2)}px sans-serif`;cx.textAlign='center';cx.textBaseline='bottom';
+  'ABCDEFGH'.split('').forEach((l,c)=>cx.fillText(l,M+c*CELL+CELL/2,H-1));
+}
+
+// ---- Input: Drag & Drop + Click ----
+let drag=null, lastHover=''; // drag={type,fromR,fromC,px,py}
+
+function cvPos(cx,cy){
+  const rc=cv.getBoundingClientRect();
+  return[(cx-rc.left)*(cv.width/rc.width),(cy-rc.top)*(cv.height/rc.height)];
+}
+function cellAt(x,y){
+  if(y<0||x<MG) return null;
+  const c=~~((x-MG)/CELL),r=~~(y/CELL);
+  return(r>=0&&r<ROWS&&c>=0&&c<COLS)?{r,c}:null;
+}
+
+// Draw a piece in game style (golden coin for black, dark red for red)
+function drawPieceOnBoard(type,x,y,alpha){
+  const inf=PI[type],RR=CELL*.42,ir=inf.cl==='red';
+  cx.save();
+  if(alpha<1) cx.globalAlpha=alpha;
+
+  // Jiang: flame glow
+  if(type==='jiang'){
+    cx.save();
+    cx.shadowColor='#ff6600';cx.shadowBlur=CELL*.5;
+    cx.beginPath();cx.arc(x,y,RR+4,0,Math.PI*2);
+    cx.strokeStyle='#ff8800';cx.lineWidth=3;cx.stroke();
+    cx.restore();
+  }
+
+  // Shadow
+  cx.beginPath();cx.arc(x+1,y+2,RR,0,Math.PI*2);
+  cx.fillStyle='rgba(0,0,0,.25)';cx.fill();
+
+  if(ir){
+    // RED piece: visible red
+    cx.beginPath();cx.arc(x,y,RR,0,Math.PI*2);
+    const g=cx.createRadialGradient(x-RR*.25,y-RR*.25,RR*.1,x,y,RR);
+    g.addColorStop(0,'#cc4422');g.addColorStop(.6,'#991a00');g.addColorStop(1,'#661100');
+    cx.fillStyle=g;cx.fill();
+    cx.strokeStyle='#dd5533';cx.lineWidth=2;cx.stroke();
+    cx.beginPath();cx.arc(x,y,RR*.75,0,Math.PI*2);
+    cx.strokeStyle='rgba(255,120,80,.4)';cx.lineWidth=1.5;cx.stroke();
+    cx.fillStyle='#ffe080';
+    cx.font=`bold ${~~(CELL*.42)}px 'Ma Shan Zheng','KaiTi',serif`;cx.textAlign='center';cx.textBaseline='middle';
+    cx.fillText(inf.ch,x,y);
+  } else {
+    // BLACK piece: golden coin
+    cx.beginPath();cx.arc(x,y,RR,0,Math.PI*2);
+    const g=cx.createRadialGradient(x-RR*.2,y-RR*.3,RR*.05,x,y,RR);
+    g.addColorStop(0,'#f5e6b8');g.addColorStop(.3,'#e8d08c');g.addColorStop(.7,'#c9a84c');g.addColorStop(1,'#a07830');
+    cx.fillStyle=g;cx.fill();
+    cx.strokeStyle='#8b6914';cx.lineWidth=2;cx.stroke();
+    cx.beginPath();cx.arc(x,y,RR*.75,0,Math.PI*2);
+    cx.strokeStyle='rgba(120,80,20,.4)';cx.lineWidth=1.5;cx.stroke();
+    cx.fillStyle='#3a2510';
+    cx.font=`bold ${~~(CELL*.42)}px 'Ma Shan Zheng','KaiTi',serif`;cx.textAlign='center';cx.textBaseline='middle';
+    cx.fillText(inf.ch,x,y);
+  }
+  cx.restore();
+}
+
+function drawPieceFloat(type,x,y){
+  drawPieceOnBoard(type,x,y,.7);
+}
+
+function onDown(clientX,clientY){
+  const[x,y]=cvPos(clientX,clientY);
+  const cell=cellAt(x,y);
+  if(!cell) return;
+
+  // Analysis mode: click highlight → show plan
+  if(solveResults.length>0){
+    const m=solveResults.find(m=>m.r===cell.r&&m.c===cell.c);
+    if(m&&(m.tag==='threat1'||m.tag==='threat2')){
+      showPlanForMove(cell.r,cell.c,m.tag==='threat1'?0:1);
+      return;
+    }
+  }
+
+  const t=board[I(cell.r,cell.c)];
+  if(t){
+    // Pick up existing piece
+    drag={type:t,fromR:cell.r,fromC:cell.c,px:clientX,py:clientY};
+    board[I(cell.r,cell.c)]=null;
+    hl=[];planArrows=[];solveResults=[];
+    draw();
+  } else {
+    // Empty cell: place selected piece from palette
+    hl=[];planArrows=[];solveResults=[];
+    if(sel==='erase'){/* nothing */}
+    else if(sel==='red'){
+      for(let i=0;i<board.length;i++) if(board[i]==='red') board[i]=null;
+      board[I(cell.r,cell.c)]='red';
+    } else {
+      board[I(cell.r,cell.c)]=sel;
+    }
+    draw();
+  }
+}
+
+function onMove(clientX,clientY){
+  if(drag){
+    drag.px=clientX;drag.py=clientY;
+    draw();
+    const[x,y]=cvPos(clientX,clientY);
+    drawPieceFloat(drag.type,x,y);
+    // Highlight target cell
+    const cell=cellAt(x,y);
+    if(cell){
+      const tx=MG+cell.c*CELL,ty=cell.r*CELL;
+      cx.strokeStyle='rgba(255,255,255,.5)';cx.lineWidth=2;cx.strokeRect(tx+1,ty+1,CELL-2,CELL-2);
+    }
+    return;
+  }
+  // Hover for plans (no drag)
+  if(!solveResults.length) return;
+  const[x,y]=cvPos(clientX,clientY);
+  const cell=cellAt(x,y);
+  const key=cell?cell.r+','+cell.c:'';
+  if(key===lastHover) return;
+  lastHover=key;
+  if(!cell){if(planArrows.length>0){planArrows=[];draw();}return;}
+  const m=solveResults.find(m=>m.r===cell.r&&m.c===cell.c);
+  if(m&&(m.tag==='threat1'||m.tag==='threat2')){
+    showPlanForMove(cell.r,cell.c,m.tag==='threat1'?0:1);
+  } else if(planArrows.length>0){planArrows=[];draw();}
+}
+
+function onUp(clientX,clientY){
+  if(!drag) return;
+  const[x,y]=cvPos(clientX,clientY);
+  const cell=cellAt(x,y);
+  if(cell){
+    if(drag.type==='red'){
+      for(let i=0;i<board.length;i++) if(board[i]==='red') board[i]=null;
+    }
+    board[I(cell.r,cell.c)]=drag.type;
+  }
+  // Off-board = piece deleted (already removed from board)
+  drag=null;
+  draw();
+}
+
+// Mouse events
+cv.addEventListener('mousedown',e=>{e.preventDefault();onDown(e.clientX,e.clientY);});
+document.addEventListener('mousemove',e=>{onMove(e.clientX,e.clientY);});
+document.addEventListener('mouseup',e=>{onUp(e.clientX,e.clientY);});
+
+// Touch events
+cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];onDown(t.clientX,t.clientY);},{passive:false});
+document.addEventListener('touchmove',e=>{if(!drag)return;e.preventDefault();const t=e.touches[0];onMove(t.clientX,t.clientY);},{passive:false});
+document.addEventListener('touchend',e=>{const t=e.changedTouches[0];onUp(t.clientX,t.clientY);});
+
+// Palette: click to select, or drag to board
+document.getElementById('pal').addEventListener('click',e=>{
+  const b=e.target.closest('.pb');if(!b)return;sel=b.dataset.t;
+  document.querySelectorAll('.pb').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');
+});
+document.getElementById('pal').addEventListener('mousedown',e=>{
+  const b=e.target.closest('.pb');if(!b)return;
+  const t=b.dataset.t;if(t==='erase') return;
+  sel=t;
+  document.querySelectorAll('.pb').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');
+  drag={type:t,fromR:-1,fromC:-1,px:e.clientX,py:e.clientY};
+});
+document.getElementById('pal').addEventListener('touchstart',e=>{
+  const b=e.target.closest('.pb');if(!b)return;
+  const t=b.dataset.t;if(t==='erase') return;
+  sel=t;
+  document.querySelectorAll('.pb').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');
+  const touch=e.touches[0];
+  drag={type:t,fromR:-1,fromC:-1,px:touch.clientX,py:touch.clientY};
+},{passive:true});
+document.getElementById('sb').addEventListener('click',solve);
+
+function loadDefault(){
+  board=new Array(ROWS*COLS).fill(null);
+  board[I(6,3)]='red';board[I(2,3)]='zu';board[I(2,5)]='zu';board[I(2,7)]='zu';
+}
+document.getElementById('cb').addEventListener('click',()=>{loadDefault();hl=[];planArrows=[];solveResults=[];document.getElementById('res').innerHTML='<span class="gh">Сброс.</span>';draw();});
+window.addEventListener('resize',()=>{resize();draw();});
+loadDefault();document.fonts.ready.then(()=>draw());
+</script>
+</body>
+</html>
