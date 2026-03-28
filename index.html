@@ -758,9 +758,17 @@ function loadDefault(){
   board=new Array(ROWS*COLS).fill(null);
   board[I(6,3)]='red';board[I(2,3)]='zu';board[I(2,5)]='zu';board[I(2,7)]='zu';
 }
+function saveBoard(){try{localStorage.setItem('lop_board',JSON.stringify(board));}catch(e){}}
+function loadSaved(){try{const s=localStorage.getItem('lop_board');if(s){const b=JSON.parse(s);if(b&&b.length===ROWS*COLS){board=b;return true;}}}catch(e){}return false;}
+
+// Auto-save after any board change
+const _origDraw=draw;
+draw=function(){_origDraw();saveBoard();};
+
 document.getElementById('cb').addEventListener('click',()=>{loadDefault();hl=[];planArrows=[];solveResults=[];document.getElementById('res').innerHTML='<span class="gh">Сброс.</span>';draw();});
 window.addEventListener('resize',()=>{resize();draw();});
-loadDefault();document.fonts.ready.then(()=>draw());
+if(!loadSaved()) loadDefault();
+document.fonts.ready.then(()=>draw());
 </script>
 </body>
 </html>
