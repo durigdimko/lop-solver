@@ -164,32 +164,46 @@ function isAttacked(b,tr,tc){
   return false;
 }
 
-// Apply red move. Jiang explosion: destroys row+column on capture.
+// Apply red move. No immediate jiang explosion (delayed to next turn).
 function applyRed(b,rr,rc,mr,mc){
   const nb=[...b];
-  const captured=nb[I(mr,mc)];
   nb[I(mr,mc)]='red'; nb[I(rr,rc)]=null;
-  if(captured==='jiang'){
-    for(let c=0;c<COLS;c++) if(nb[I(mr,c)]&&nb[I(mr,c)]!=='red') nb[I(mr,c)]=null;
-    for(let r=0;r<ROWS;r++) if(nb[I(r,mc)]&&nb[I(r,mc)]!=='red') nb[I(r,mc)]=null;
-  }
   return nb;
 }
 
-// Total value of capturing piece at (mr,mc) including jiang explosion collateral
+// Apply jiang explosion at position (er,ec): destroys all non-red on row+col
+function applyExplosion(b,er,ec){
+  const nb=[...b];
+  for(let c=0;c<COLS;c++) if(nb[I(er,c)]&&nb[I(er,c)]!=='red') nb[I(er,c)]=null;
+  for(let r=0;r<ROWS;r++) if(nb[I(r,ec)]&&nb[I(r,ec)]!=='red') nb[I(r,ec)]=null;
+  return nb;
+}
+
+// Total value of capturing piece at (mr,mc)
+// For jiang: explosion is delayed — black gets 1 move to escape
 function captureValue(b, mr, mc){
   const cap=b[I(mr,mc)];
   if(!cap||PI[cap]?.cl!=='blk') return 0;
   let val=PI[cap].v;
   if(cap==='jiang'){
+    // Count collateral on explosion line
+    let collateral=0, maxEscape=0;
+    const onLine=[];
     for(let c=0;c<COLS;c++){
       const p=b[I(mr,c)];
-      if(c!==mc&&p&&PI[p]?.cl==='blk') val+=PI[p].v;
+      if(c!==mc&&p&&PI[p]?.cl==='blk'){collateral+=PI[p].v;onLine.push({r:mr,c,v:PI[p].v,t:p});}
     }
     for(let r=0;r<ROWS;r++){
       const p=b[I(r,mc)];
-      if(r!==mr&&p&&PI[p]?.cl==='blk') val+=PI[p].v;
+      if(r!==mr&&p&&PI[p]?.cl==='blk'){collateral+=PI[p].v;onLine.push({r,c:mc,v:PI[p].v,t:p});}
     }
+    // Black saves their best escapable piece
+    for(const pc of onLine){
+      if(pc.v<=maxEscape) continue;
+      const moves=blackPieceMoves(b,pc.r,pc.c);
+      if(moves.some(([nr,nc])=>nr!==mr&&nc!==mc)) maxEscape=pc.v;
+    }
+    val+=collateral-maxEscape;
   }
   return val;
 }
@@ -372,12 +386,14 @@ function evalRedMove(b, rr, rc, mr, mc){
 
   if(isAttacked(nb,mr,mc)) return {score:-99999, tag:'dead'};
   if(capVal>0){
-    // Chain captures: what can we guarantee AFTER this capture?
-    const g1=maxGuaranteed(nb, mr, mc, 0);
-    const g2=maxGuaranteed(nb, mr, mc, 1);
+    // For jiang captures: explosion happens after black's next move
+    // Chain captures computed on post-explosion board
+    const postBoard=cap==='jiang'?applyExplosion(nb,mr,mc):nb;
+    const g1=maxGuaranteed(postBoard, mr, mc, 0);
+    const g2=maxGuaranteed(postBoard, mr, mc, 1);
     const chain=g1||g2;
     const totalVal=capVal+(g1||0);
-    const tempo=postCapScore(nb,mr,mc);
+    const tempo=postCapScore(postBoard,mr,mc);
     // Immediate capture: value*10000 + 5000 bonus for being immediate + g2 chain bonus
     return {score:totalVal*10000+5000+g2*5000+tempo, tag:'cap', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang', tempo, chain, g1c:g1, g2c:g2};
   }
