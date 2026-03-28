@@ -401,7 +401,7 @@ function evalRedMove(b, rr, rc, mr, mc){
   if(attacked && capVal>0 && !hasRespawn) return {score:-99999, tag:'dead'}; // capture but no respawn = dead
   if(attacked && capVal>0 && hasRespawn){
     // Respawn capture: we die but respawn at same spot, killing attacker (no points for attacker kill)
-    return {score:capVal*1000+500, tag:'respawn', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang'};
+    return {score:capVal*10000+500, tag:'respawn', capPiece:PI[cap].ch, capVal, isBoom:cap==='jiang'};
   }
   if(capVal>0){
     // For jiang captures: explosion happens after black's next move
@@ -456,8 +456,13 @@ function solve(){
     const results=moves.map(([mr,mc])=>{
       const res=evalRedMove(board,rr,rc,mr,mc);
       return{r:mr,c:mc,...res};
-    }).sort((a,b)=>b.score-a.score);
+    });
 
+    // Respawn captures only if no safe captures/threats exist
+    const hasBetter=results.some(m=>m.tag==='cap'||m.tag==='threat1'||m.tag==='threat2');
+    if(hasBetter) results.forEach(m=>{if(m.tag==='respawn') m.score=-99999;});
+
+    results.sort((a,b)=>b.score-a.score);
     solveResults=results;
     solveRedPos=[rr,rc];
     const best=results[0];
