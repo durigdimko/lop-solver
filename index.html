@@ -612,7 +612,23 @@ function solve(){
     let html='';
     // Blocked detection: all moves are dead or very bad
     const safeMoves=results.filter(m=>m.tag!=='dead'&&m.score>0);
-    if(safeMoves.length===0) html+=`<b class="gd">⛔ Пацаны, я словил маслину (Game Over)${hasUnstoppable?' — жми ⚡ Рывок!':''}</b><br><br>`;
+    // When blocked + unstoppable available: show Рывок FIRST
+    if(safeMoves.length===0&&hasUnstoppable){
+      const uMoves=evalUnstoppable(board,rr,rc);
+      html+=`<b class="gd">⛔ Пацаны, я словил маслину (Game Over)</b><br>`;
+      if(uMoves.length>0){
+        const ub=uMoves[0];
+        html+=`<b class="gb" style="color:#44aaff">⚡ РЫВОК: ${cn(rr,rc)} → ${cn(ub.r,ub.c)} — +${ub.pathVal} (${ub.pieces.join('+')})</b>${ub.safe?'':' 💀'}<br><br>`;
+        html+='<b style="color:#44aaff">⚡ Рывок (топ-5):</b><br>';
+        for(const m of uMoves.slice(0,5)){
+          const cls=m.safe?'gs':'gd';
+          html+=`<span class="${cls}">⚡ +${m.pathVal} (${m.pieces.join('+')})</span>`;
+          html+=` <span class="gh">${cn(m.r,m.c)}${m.safe?'':' 💀'}${m.g1?' → +'+m.g1:''}</span><br>`;
+        }
+        html+='<br>';
+      } else html+='<br>';
+    }
+    else if(safeMoves.length===0) html+=`<b class="gd">⛔ Пацаны, я словил маслину (Game Over)</b><br><br>`;
     else if(!hasForced) html+=`<b class="gw">⚠ Нет форсированных взятий — позиционный ход</b><br><br>`;
 
     html+=`<b class="gb">▶ ${cn(rr,rc)} → ${cn(best.r,best.c)}</b>`;
