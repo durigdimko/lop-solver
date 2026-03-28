@@ -59,7 +59,7 @@ const cv=document.getElementById('bd'),cx=cv.getContext('2d');
 function resize(){const mw=Math.min(window.innerWidth-20,420);CELL=Math.floor((mw-MG)/COLS);cv.width=CELL*COLS+MG;cv.height=CELL*ROWS;}
 resize();
 
-let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true,lastRedPos=null;
+let board=new Array(ROWS*COLS).fill(null),sel='red',hl=[],planArrows=[],hasRespawn=true,posHistory=[];
 
 const PI={
   red:  {ch:'車',cl:'red', v:0},
@@ -381,8 +381,9 @@ function posScore(b, mr, mc){
   const cc=Math.max(0,2-Math.abs(mc-3.5));
   const center=~~((cr+cc)*2);
 
-  // Composite: safeExits critical >> proximity > mobility > fork
-  const ps=safeExits*100 + proximity*5 + mobility*3 + fork*50 + pinned*2 + center + xrayVal + corridorVal;
+  // Composite: safeExits capped (avoid traps but don't flee to corners) + proximity drives direction
+  const safeCap=Math.min(safeExits,5);
+  const ps=safeCap*200 + proximity*10 + mobility*3 + fork*50 + pinned*2 + center + xrayVal + corridorVal;
   return {pinned,mobility,directThreats,forkDirs,corridorVal,xrayVal,fork,center,proximity,bestTarget,safeExits,ps};
 }
 
@@ -439,8 +440,8 @@ function evalRedMove(b, rr, rc, mr, mc){
   if(g1>0){ tag='threat1'; score=g1*10000 + g2*100 + 1; }
   else if(g2>0){ tag='threat2'; score=g2*100 + 1; }
   else{ tag='pos'; score=pos.ps; }
-  // Anti-oscillation: penalize moving back to where we just were
-  if(tag==='pos'&&lastRedPos&&mr===lastRedPos[0]&&mc===lastRedPos[1]) score=~~(score*0.3);
+  // Anti-oscillation: penalize returning to any of last 4 positions
+  if(tag==='pos'&&posHistory.some(p=>p[0]===mr&&p[1]===mc)) score=~~(score*0.2);
   return {score, tag, g1, g2, ...pos};
 }
 
@@ -460,7 +461,8 @@ function solve(){
   const rp=findRed(board);
   if(!rp){document.getElementById('res').innerHTML='<span class="gh">⚠️ Поставьте красную 車</span>';hl=[];draw();return;}
   const[rr,rc]=rp;
-  lastRedPos=[rr,rc];
+  posHistory.push([rr,rc]);
+  if(posHistory.length>4) posHistory.shift();
   const moves=redMoves(board);
   if(!moves.length){document.getElementById('res').innerHTML='<span class="gd">⛔ Нет ходов</span>';hl=[];draw();return;}
   document.getElementById('res').innerHTML='<span class="gh">⏳ Считаю...</span>';
